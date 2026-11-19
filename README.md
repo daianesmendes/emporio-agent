@@ -33,8 +33,8 @@ Requires Python 3.11+ and a free API key from [Google AI Studio](https://aistudi
 [Groq](https://console.groq.com/keys) key as a backup provider).
 
 ```bash
-git clone https://github.com/daianesmendes/emporio-agente.git
-cd emporio-agente
+git clone https://github.com/daianesmendes/emporio-agent.git
+cd emporio-agent
 cp .env.example .env      # paste the key into LLM_API_KEY (and optionally LLM_FALLBACK_API_KEY)
 uv sync                   # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uv run emporio --debug
