@@ -1,0 +1,24 @@
+# O que NÃO entra na imagem.
+
+# Segredos: as chaves entram só na hora de rodar (--env-file ou variáveis do serviço).
+.env
+.env.*
+!.env.example
+
+# Ambiente e caches locais (a imagem monta o próprio .venv).
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Histórico, conversas locais e resultados de avaliação.
+.git/
+.github/
+.sessions/
+evals/resultados/
+
+# Não usados pela API.
+tests/
+examples/
+docs/
+.DS_Store

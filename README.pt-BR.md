@@ -17,7 +17,7 @@ equipe humana o que exige ação.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
 - **Avaliação automatizada** com 35 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
-- **71 testes** que rodam sem chamar o LLM, no CI a cada push.
+- **87 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
 
@@ -41,9 +41,39 @@ uv run emporio --debug
 | `emporio --sessao nome` | Salva e retoma o histórico da conversa |
 | `emporio --roteiro arquivo.txt -o saida.md` | Executa uma conversa roteirizada e grava a transcrição |
 | `emporio-eval` | Roda a avaliação automatizada (ver [Avaliação](#avaliação)) |
+| `emporio-api` | Sobe a API HTTP em `http://localhost:8000` (documentação interativa em `/docs`; ver [API](#api)) |
 | `pytest` | Roda os testes |
 
 As demais opções (modelos, provedor de reserva, data de referência) estão comentadas no [`.env.example`](.env.example).
+
+### API
+
+O mesmo agente atrás de uma API HTTP ([`api.py`](src/emporio/api.py), FastAPI). A API é uma camada fina: valida o
+pedido, chama `Agent.reply()` e devolve JSON — ferramentas, verificações finais e a regra de LGPD ficam no agente.
+
+| Rota | O que faz |
+|---|---|
+| `POST /conversas/{id}/mensagens` | Envia `{"texto": "..."}`; devolve a resposta, o modelo, as ferramentas consultadas e as correções da verificação final |
+| `GET /conversas/{id}` | A conversa visível (cliente e Clave), sem os detalhes internos das ferramentas |
+| `DELETE /conversas/{id}` | Apaga a conversa |
+| `GET /saude` | Verificação de saúde |
+
+- **Entrada e saída tipadas** (Pydantic): mensagem vazia ou longa demais, ou campo errado, recebe `422` com o motivo.
+- **O id da conversa vira nome de arquivo**, então só aceita letras, números, `-` e `_` (bloqueia *path traversal*).
+- **Proteção da cota:** cada mensagem custa de 1 a 3 chamadas ao modelo, então há limite por visitante (10/min, `429`)
+  e um teto diário somando todos (300/dia), ambos configuráveis (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_PER_DAY`).
+- **Chave opcional:** com `API_KEY` configurada, os pedidos precisam do cabeçalho `X-API-Key` (uso interno). Uma demo
+  pública se apoia nos limites, porque uma chave escrita numa página da web fica visível para qualquer um.
+- Sem nenhum modelo disponível, a API devolve `503` (tente depois), em vez de fingir que deu certo.
+
+**Com Docker** (sem precisar de Python; as chaves entram na hora de rodar e nunca vão para a imagem):
+
+```bash
+docker build -t clave .
+docker run -p 8010:7860 --env-file .env clave      # → http://localhost:8010/docs
+```
+
+O CI monta a imagem a cada push e confere que o container liga e responde em `/saude`.
 
 ---
 
@@ -64,7 +94,9 @@ Transcrições geradas executando o agente (`emporio --roteiro`), com as ferrame
 ```mermaid
 flowchart LR
     U([Cliente]) <--> CLI[cli.py]
+    U <--> API[api.py<br/>FastAPI]
     CLI <--> A[agent.py<br/>loop do agente]
+    API <--> A
     A --> P[prompts.py<br/>persona · horário · catálogo]
     A <--> L[llm.py<br/>fallback]
     L <--> G[(Gemini)]
@@ -255,9 +287,12 @@ perguntas de encaminhamento, 3 rodadas cada, mesmo modelo e mesmo juiz ([antes](
 
 - **Data de referência:** os pedidos vão até março de 2026, então o agente usa `AGENT_NOW=2026-03-25 14:00` para os prazos fazerem sentido. Como não existe data de recebimento no sistema, a previsão de entrega serve de referência.
 - **Limitações:** a cota e a latência do plano gratuito variam; a busca é por palavra-chave, não semântica; o frete
-  para outras cidades não é calculado; os casos ficam num arquivo local; e a verificação por e-mail ou telefone é fraca para produção.
+  para outras cidades não é calculado; conversas e casos ficam em arquivos locais (num container, somem quando ele
+  reinicia — um banco de dados resolveria); os limites de uso ficam na memória, o que basta para um container, mas não
+  para várias réplicas (precisariam de um armazenamento compartilhado, como Redis); e a verificação por e-mail ou
+  telefone é fraca para produção.
 - **Próximos passos:** tracing (Langfuse ou
-  OpenTelemetry); API com webhook de WhatsApp e verificação por OTP; Postgres no lugar dos CSVs; busca semântica no catálogo.
+  OpenTelemetry); webhook de WhatsApp chamando a API, com verificação por OTP; Postgres no lugar dos CSVs; busca semântica no catálogo.
 
 ---
 
