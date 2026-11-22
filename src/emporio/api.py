@@ -15,7 +15,10 @@ import time
 from collections import defaultdict, deque
 from datetime import date
 
+from pathlib import Path as FilePath
+
 from fastapi import Depends, FastAPI, Header, HTTPException, Path, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from . import config
@@ -25,6 +28,8 @@ from .llm import LLMClient
 
 # O id da conversa vira nome de arquivo (.sessions/{id}.json): só letras, números, "-" e "_".
 # Sem isso, um id como "../../.env" tentaria ler ou sobrescrever arquivos do servidor (path traversal).
+CHAT_PAGE = FilePath(__file__).parent / "web" / "index.html"
+
 ConversaId = Path(pattern=r"^[A-Za-z0-9_-]{1,64}$", description="Identificador da conversa, escolhido pelo cliente.")
 
 
@@ -91,7 +96,7 @@ class RateLimiter:
 
 
 def client_ip(request: Request) -> str:
-    """IP do visitante. Atrás de um proxy (ex.: Hugging Face), o IP original vem no X-Forwarded-For."""
+    """IP do visitante. Atrás de um proxy (ex.: Render), o IP original vem no X-Forwarded-For."""
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
@@ -104,7 +109,7 @@ def client_ip(request: Request) -> str:
 def create_app(llm: LLMClient | None = None, store: Store | None = None) -> FastAPI:
     """Monta a API. Os testes passam um LLM simulado; em produção, vem do .env."""
     app = FastAPI(
-        title="Clave — Empório da Música",
+        title="Clave: Empório da Música",
         description="Agente de atendimento de uma loja de instrumentos musicais (fictícia).",
         version="1.0.0",
     )
@@ -129,6 +134,14 @@ def create_app(llm: LLMClient | None = None, store: Store | None = None) -> Fast
 
     def agent_for(conversa_id: str) -> Agent:
         return Agent(store=app.state.store, llm=app.state.llm, session_id=conversa_id)
+
+    chat_page = CHAT_PAGE.read_text(encoding="utf-8")
+
+    # A tela de chat (front-end) usa a própria API com fetch(): front → API → agente.
+    # GET e HEAD: alguns serviços de hospedagem checam se o site está no ar com HEAD.
+    @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse, include_in_schema=False)
+    def chat() -> str:
+        return chat_page
 
     @app.get("/saude", summary="Verifica se o serviço está no ar")
     def saude() -> dict:
@@ -171,7 +184,7 @@ def create_app(llm: LLMClient | None = None, store: Store | None = None) -> Fast
 
 
 def main() -> None:
-    """Sobe a API com o Uvicorn. Porta por variável de ambiente (o Hugging Face usa 7860)."""
+    """Sobe a API com o Uvicorn. Host e porta por variável de ambiente (no container: 0.0.0.0:10000)."""
     import uvicorn
 
     uvicorn.run(create_app(), host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", "8000")))

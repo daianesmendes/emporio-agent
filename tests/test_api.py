@@ -72,7 +72,8 @@ def test_conversas_sao_separadas_por_id():
 def test_id_invalido_e_recusado(conversa_id):
     # O id vira nome de arquivo: nada de pontos, barras ou espaços (path traversal).
     r = client_with([]).get(f"/conversas/{conversa_id}")
-    assert r.status_code in (404, 422)
+    # Ou o id é recusado, ou o caminho é normalizado ("/conversas/.." vira "/") e nem chega à rota de conversas.
+    assert r.status_code in (404, 422) or "conversa_id" not in r.text
 
 
 @pytest.mark.parametrize("texto", ["", "x" * 1001])
@@ -128,3 +129,10 @@ def test_chave_de_api_quando_configurada(monkeypatch):
     ok = client.post("/conversas/a/mensagens", json={"texto": "oi"}, headers={"X-API-Key": "segredo-de-teste"})
     assert ok.status_code == 200
     assert client.get("/saude").status_code == 200  # a verificação de saúde nunca exige chave
+
+
+def test_tela_de_chat_na_raiz():
+    r = client_with([]).get("/")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert "Clave" in r.text and "não digite dados pessoais reais" in r.text
+    assert "/conversas/" in r.text  # a tela conversa com a própria API
