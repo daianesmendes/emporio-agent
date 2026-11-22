@@ -59,6 +59,10 @@ class LLMClient:
         }
         self._cooldown_until: dict[str, float] = {}
         self._unavailable: set[str] = set()
+        # Com um único modelo (ex.: avaliação com modelo fixo) não há para onde cair: em vez de desistir
+        # no 429 de limite por minuto, espera e tenta de novo. 0 = comportamento normal (fallback).
+        self.rate_limit_wait = 0
+        self.rate_limit_retries = 4
         # Uma entrada por chamada bem-sucedida (modelo, tokens, segundos) — usada na avaliação.
         self.usage: list[dict] = []
 
@@ -71,6 +75,18 @@ class LLMClient:
     def client(self, value):
         self.clients[self.providers[0].name] = value
 
+    def _create(self, provider: Provider, model: str, payload: list[dict], tools: list[dict], extra: dict):
+        for attempt in range(self.rate_limit_retries + 1):
+            try:
+                return self.clients[provider.name].chat.completions.create(
+                    model=model, messages=payload, tools=tools, temperature=0.3, **extra,
+                )
+            except openai.RateLimitError:
+                if not self.rate_limit_wait or attempt == self.rate_limit_retries:
+                    raise
+                log.warning("%s: limite por minuto; aguardando %ss.", model, self.rate_limit_wait)
+                time.sleep(self.rate_limit_wait)
+
     def chat(self, messages: list[dict], tools: list[dict]):
         """Retorna (mensagem, modelo_usado)."""
         errors = []
@@ -80,13 +96,15 @@ class LLMClient:
             extra = {"reasoning_effort": provider.reasoning_effort} if provider.reasoning_effort else {}
             for model in provider.models:
                 key = f"{provider.name}:{model}"
-                if key in self._unavailable or self._cooldown_until.get(key, 0) > time.time():
+                if key in self._unavailable:
+                    continue
+                # A espera só faz sentido quando há outro modelo para assumir; com modelo fixo
+                # (rate_limit_wait), quem trata o 429 é a espera com nova tentativa em _create.
+                if not self.rate_limit_wait and self._cooldown_until.get(key, 0) > time.time():
                     continue
                 try:
                     started = time.perf_counter()
-                    resp = self.clients[provider.name].chat.completions.create(
-                        model=model, messages=payload, tools=tools, temperature=0.3, **extra,
-                    )
+                    resp = self._create(provider, model, payload, tools, extra)
                     u = getattr(resp, "usage", None)
                     self.usage.append({
                         "modelo": model,

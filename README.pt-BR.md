@@ -17,7 +17,7 @@ equipe humana o que exige ação.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
 - **Avaliação automatizada** com 33 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
-- **51 testes** que rodam sem chamar o LLM, no CI a cada push.
+- **54 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
 
@@ -180,11 +180,46 @@ vazamento técnico.
   em uma frase"), uma era falta de contexto (ele não conhecia o telefone oficial) e uma era resultado de ferramenta que
   eu tinha cortado. Cada uma foi conferida contra a resposta antes de ser aceita ou corrigida.
 - **Uma rodada não é uma medida.** A taxa quase não mudou, mas *quais* casos falharam mudou: LLM não é determinístico, e
-  no plano gratuito o modelo que responde varia com a cota — o mais leve (`flash-lite`) respondeu a maioria dos turnos.
-  Próximo passo: repetir cada caso N vezes e comparar modelos fixados com `--modelo`.
+  no plano gratuito o modelo que responde varia com a cota. Daí veio a comparação de modelos abaixo.
 - **A cota gratuita molda a montagem.** O juiz bateu nos limites de tokens por minuto e por dia do Groq; juiz
   indisponível conta como "não avaliado", nunca como reprovação, e `--rejulgar` refaz o julgamento das respostas
   salvas sem chamar o agente de novo.
+
+### Comparação de modelos: é a receita ou o cozinheiro?
+
+Nas rodadas acima, a maioria das respostas veio do modelo mais leve, porque os melhores estavam sem cota. A nota
+misturava duas coisas: quanto **o agente** é bom (ferramentas, prompt, verificações) e **qual modelo** respondeu naquela
+hora. Para separar, as 12 perguntas mais difíceis rodaram com cada modelo **fixo** (`--modelo`, sem fallback), 3 vezes
+nos Gemini e 1 vez no Groq (1 requisição por minuto no plano gratuito), todas corrigidas pelo mesmo juiz
+(`qwen3.8-27b`, que não estava na disputa). Tabela completa: [`comparacao.md`](evals/resultados/comparacao.md).
+
+| Modelo | Respondeu (resto: cota) | Aprovadas / respondidas | Valores sem origem | Ações sem execução | Espera (mediana) |
+|---|---|---|---|---|---|
+| gemini-3.1-flash-lite | 21 de 36 | 17 (81%) | 0 | 0 | 5,7 s |
+| gemini-3.5-flash-lite | 29 de 36 | 23 (79%) | 0 | 0 | 13,7 s |
+| gpt-oss-120b (Groq) | 11 de 12 | 7 (64%) | 0 | 0 | 1,8 s |
+
+O que ela mostrou:
+
+- **As verificações em código seguram independentemente do modelo.** Nenhum valor inventado e nenhuma ação sem
+  execução nos três. Essa segurança não depende da escolha do modelo.
+- **Erro que todos os modelos cometem é erro do agente.** Os três omitiram o preço atual numa promoção encerrada, e
+  dois omitiram o código de rastreio. A correção foi no agente: a ferramenta passou a dizer o preço atual, e o prompt
+  pede rastreio e previsão de entrega. Medido de novo com o `gemini-3.5-flash-lite`: promoção encerrada 1/3 → **3/3**;
+  rastreio 1/2 → **2/2**; promoção + PIX 2/2 → **3/3** (checagens em código e juiz).
+- **Uma ferramenta pode ser mal usada sem "inventar" nada.** O `gpt-oss-120b` passou o preço promocional para a
+  calculadora de pagamento como valor solto, e a ferramenta aplicou o desconto do PIX por cima — desconto que a loja não
+  acumula. O valor *veio de uma ferramenta*, então a checagem de origem não tinha como pegar; o juiz pegou. Corrigido na
+  ferramenta, com teste.
+- **A diferença entre modelos é pequena para essa amostra.** Com 11 a 29 respostas por modelo, 64–81% não separa um
+  do outro com segurança. A latência separou: o Groq respondeu em 1,8 s, contra 5,7–13,7 s.
+- **O plano gratuito decide quais modelos dá para testar.** Os dois Gemini mais fortes estavam fora do ar (503 e
+  timeout) e um terceiro esgotou a cota do dia, então a comparação cobre os modelos que de fato estavam disponíveis.
+
+Em aberto: uma resposta prometeu retorno "ainda hoje" quando a ferramenta diz "até 24 horas úteis", e algumas respostas
+de encaminhamento são secas (registram o caso sem explicar a garantia ou o atraso).
+
+---
 
 ## Suposições, limitações e próximos passos
 

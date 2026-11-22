@@ -20,7 +20,7 @@ the store's policies, and hands off to the human team whatever requires action.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
 - **Automated evaluation** with 33 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
-- **51 tests** that run without calling the LLM, in CI on every push.
+- **54 tests** that run without calling the LLM, in CI on every push.
 
 ---
 
@@ -184,11 +184,45 @@ technical leaks.
   one sentence"), one was missing context (it did not know the store's official phone), and one was tool results I had
   truncated. Each was checked against the answer before being accepted or fixed.
 - **One run is not a measurement.** The pass rate barely moved, but *which* cases failed changed: LLMs are not
-  deterministic, and on the free tier the answering model varies with quota — the lightest model (`flash-lite`)
-  answered most turns. Next step: repeat each case N times and compare models pinned with `--modelo`.
+  deterministic, and on the free tier the answering model varies with quota. That led to the model comparison below.
 - **Free-tier quotas shape the setup.** The judge hit Groq's per-minute and per-day token limits; a judge that is
   unavailable counts as "not evaluated", never as a failure, and `--rejulgar` re-judges saved answers without calling
   the agent again.
+
+### Model comparison: is it the recipe or the cook?
+
+In the runs above, most answers came from the lightest model, because the better ones were out of quota. So the score
+mixed two things: how good **the agent** is (tools, prompt, checks) and **which model** happened to answer. To separate
+them, the 12 hardest cases ran with each model **pinned** (`--modelo`, no fallback), 3 times each on Gemini and once on
+Groq (1 request/minute on the free tier), all graded by the same judge (`qwen3.8-27b`, which was not competing).
+Full table: [`comparacao.md`](evals/resultados/comparacao.md).
+
+| Model | Answered (rest: quota) | Passed / answered | Untraceable amounts | Unbacked actions | Median wait |
+|---|---|---|---|---|---|
+| gemini-3.1-flash-lite | 21 of 36 | 17 (81%) | 0 | 0 | 5.7 s |
+| gemini-3.5-flash-lite | 29 of 36 | 23 (79%) | 0 | 0 | 13.7 s |
+| gpt-oss-120b (Groq) | 11 of 12 | 7 (64%) | 0 | 0 | 1.8 s |
+
+What it showed:
+
+- **The checks in code hold regardless of the model.** No invented amounts and no unbacked actions in any of the
+  three. That safety does not depend on the model choice.
+- **Errors shared by every model are agent errors.** All three omitted the current price of an expired promotion, and
+  two of them omitted the tracking code. The fix went into the agent: the tool now states the current price, and the
+  prompt asks for tracking code and delivery estimate. Re-measured with `gemini-3.5-flash-lite`:
+  expired promotion 1/3 → **3/3**; tracking code 1/2 → **2/2**; promotion + PIX 2/2 → **3/3** (code checks and judge).
+- **A tool can be misused without "inventing" anything.** `gpt-oss-120b` passed a promotional price to the payment
+  calculator as a plain amount, and the tool added the PIX discount on top — a discount the store does not stack. The
+  amount *came from a tool*, so the traceability check could not catch it; the judge did. Fixed in the tool, with a test.
+- **The differences between models are small for this sample.** With 11 to 29 answers per model, 64–81% does not
+  separate them reliably. Latency did: Groq answered in 1.8 s against 5.7–13.7 s.
+- **The free tier decides which models can be tested.** The two strongest Gemini models were down (503 and timeouts)
+  and a third ran out of daily quota, so the comparison covers the models that were actually available.
+
+Still open: one answer promised a call back "today" when the tool says "within 24 business hours", and some hand-off
+answers are terse (they register the case without explaining the warranty or the delay).
+
+---
 
 ## Assumptions, limitations and next steps
 

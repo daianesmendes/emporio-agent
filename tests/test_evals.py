@@ -57,3 +57,27 @@ def test_acao_sem_execucao_por_turno():
               _turn("Pronto", [("encaminhar_para_humano", '{"protocolo": "EM-20260325-0001"}')])]
     checks = check_case({"id": "x"}, turnos, "")
     assert not checks["acoes_rastreaveis"]["ok"]
+
+
+def _result(id_, rodada, ok):
+    return {"id": id_, "categoria": "c", "rodada": rodada, "sem_resposta": False, "chamadas_llm": 1,
+            "segundos": 2.0, "tokens_entrada": 100, "tokens_saida": 10,
+            "turnos": [{"usuario": "oi", "resposta": "olá", "modelo": "m", "reescrita": [], "ferramentas": []}],
+            "checagens": {"juiz": {"ok": ok, "detalhe": "x"}}}
+
+
+def test_relatorio_com_rodadas_aponta_instaveis():
+    from emporio.evals import summarize
+    results = [_result("a", 1, True), _result("a", 2, False), _result("b", 1, True), _result("b", 2, True)]
+    report = summarize(results, "teste", None)
+    assert "Aprovados: 3/4" in report
+    assert "instáveis (passam em algumas rodadas): 1" in report
+    assert "| a | 1/2 |" in report
+
+
+def test_comparacao_lado_a_lado(tmp_path, monkeypatch):
+    from emporio import evals
+    monkeypatch.setattr(evals, "RESULTS_DIR", tmp_path)
+    (tmp_path / "x.json").write_text(json.dumps([_result("a", 1, True), _result("a", 2, False)]))
+    table = evals.compare(["x"])
+    assert "| x | m | 2 | 0 | 1/2 (50%) |" in table

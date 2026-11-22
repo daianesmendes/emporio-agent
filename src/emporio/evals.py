@@ -9,6 +9,8 @@ para o que o código não mede (tom, empatia, aderência à política).
   uv run emporio-eval --juiz gemini-3.6-flash      # liga o juiz LLM
   uv run emporio-eval --casos preco_produto,garantia
   uv run emporio-eval --rejulgar padrao --juiz X    # refaz checagens/juiz sem chamar o agente
+  uv run emporio-eval --modelo X --repeticoes 3 --esperar-cota 60 --continuar
+  uv run emporio-eval --comparar rotulo1,rotulo2     # tabela lado a lado
 
 Resultados em evals/resultados/<rótulo>.json e .md.
 """
@@ -235,10 +237,30 @@ def summarize(results: list[dict], label: str, judge_model: str | None) -> str:
 
     n = len(results)
     ok = sum(passed(r) for r in results)
+    reps = max(r.get("rodada", 1) for r in results)
+    n_cases = len({r["id"] for r in results})
     lines = [f"# Avaliação — {label}", "",
-             f"_Data de referência do agente: {config.now():%d/%m/%Y %H:%M} · {n} casos · "
-             f"juiz: {judge_model or 'desligado'}_", "",
+             f"_Data de referência do agente: {config.now():%d/%m/%Y %H:%M} · {n_cases} casos"
+             + (f" × {reps} rodadas" if reps > 1 else "") + f" · juiz: {judge_model or 'desligado'}_", "",
              f"**Aprovados: {ok}/{n} ({ok / n:.0%})**", ""]
+    answered = [r for r in results if not r["sem_resposta"]]
+    if len(answered) < n:
+        ok_answered = sum(passed(r) for r in answered)
+        lines += [f"Sem resposta por cota/erro: {n - len(answered)} · aprovados entre os respondidos: "
+                  f"{ok_answered}/{len(answered)} ({ok_answered / max(len(answered), 1):.0%})", ""]
+    if reps > 1:
+        by_case = defaultdict(list)
+        for r in answered:  # rodada sem resposta (cota) não conta como instabilidade
+            by_case[r["id"]].append(passed(r))
+        unstable = {k: v for k, v in by_case.items() if 0 < sum(v) < len(v)}
+        always_bad = [k for k, v in by_case.items() if not any(v)]
+        lines += [f"Entre as rodadas respondidas — casos sempre aprovados: {sum(all(v) for v in by_case.values())}/{len(by_case)} · "
+                  f"instáveis (passam em algumas rodadas): {len(unstable)} · sempre reprovados: {len(always_bad)}", ""]
+        if unstable or always_bad:
+            lines += ["| Caso | Rodadas aprovadas |", "|---|---|"]
+            for k, v in sorted({**unstable, **{k: by_case[k] for k in always_bad}}.items(), key=lambda kv: sum(kv[1])):
+                lines.append(f"| {k} | {sum(v)}/{len(v)} |")
+            lines.append("")
 
     lines += ["| Categoria | Aprovados |", "|---|---|"]
     by_cat = defaultdict(list)
@@ -278,7 +300,8 @@ def summarize(results: list[dict], label: str, judge_model: str | None) -> str:
             reasons = [f"{k}: {c['detalhe']}" for k, c in r["checagens"].items() if c["ok"] is False]
             if r["sem_resposta"]:
                 reasons.insert(0, "sem resposta do modelo")
-            lines.append(f"<details><summary><b>{r['id']}</b> — {'; '.join(reasons)}</summary>\n")
+            tag = f" (rodada {r['rodada']})" if reps > 1 else ""
+            lines.append(f"<details><summary><b>{r['id']}</b>{tag} — {'; '.join(reasons)}</summary>\n")
             for t in r["turnos"]:
                 lines.append(f"**Cliente:** {t['usuario']}\n")
                 if t["ferramentas"]:
@@ -286,6 +309,38 @@ def summarize(results: list[dict], label: str, judge_model: str | None) -> str:
                 lines.append(f"**Clave:** {t['resposta']}\n")
             lines.append("</details>\n")
     return "\n".join(lines) + "\n"
+
+
+def compare(labels: list[str]) -> str:
+    """Tabela lado a lado de resultados já salvos (um rótulo por modelo)."""
+    lines = ["# Comparação de modelos", "",
+             "Falta de cota não é erro do modelo: as taxas são calculadas só sobre as execuções que tiveram resposta.", "",
+             "| Rótulo | Modelo(s) | Execuções | Sem resposta (cota) | Aprovadas / respondidas | Valores sem origem "
+             "| Ações sem execução | Reprovado pelo juiz | Casos instáveis | Tempo (mediana) | Tokens/caso |",
+             "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for label in labels:
+        results = [r for r in json.loads((RESULTS_DIR / f"{label}.json").read_text(encoding="utf-8"))]
+        total, missing = len(results), sum(r["sem_resposta"] for r in results)
+        results = [r for r in results if not r["sem_resposta"]]
+        ok = [not r["sem_resposta"] and all(c["ok"] is not False for c in r["checagens"].values()) for r in results]
+        fail = lambda name: sum(r["checagens"].get(name, {}).get("ok") is False for r in results)
+        by_case = defaultdict(list)
+        for r, o in zip(results, ok):
+            by_case[r["id"]].append(o)
+        unstable = sum(0 < sum(v) < len(v) for v in by_case.values())
+        models = Counter(t["modelo"] for r in results for t in r["turnos"] if t["modelo"])
+        secs = [r["segundos"] for r in results if r["chamadas_llm"]]
+        tokens = statistics.mean(r["tokens_entrada"] + r["tokens_saida"] for r in results)
+        lines.append(
+            f"| {label} | {', '.join(m for m, _ in models.most_common(3))} | {total} | {missing} | "
+            f"{sum(ok)}/{len(results)} ({sum(ok) / len(results):.0%}) | "
+            f"{fail('valores_rastreaveis')} | {fail('acoes_rastreaveis')} | {fail('juiz')} | {unstable} | "
+            f"{statistics.median(secs):.1f} s | {_int(tokens)} |")
+    return "\n".join(lines) + "\n"
+
+
+def _save(path: Path, results: list[dict]) -> None:
+    path.write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 def main() -> None:
@@ -297,9 +352,21 @@ def main() -> None:
     parser.add_argument("--rejulgar", metavar="ROTULO",
                         help="reaproveita as respostas de um resultado salvo e refaz só as checagens e o juiz")
     parser.add_argument("--refazer-juiz", action="store_true", help="com --rejulgar, julga de novo também os já avaliados")
+    parser.add_argument("--repeticoes", type=int, default=1, help="roda cada caso N vezes (mede estabilidade)")
+    parser.add_argument("--continuar", action="store_true",
+                        help="retoma um resultado parcial do mesmo rótulo (útil quando a cota acaba no meio)")
+    parser.add_argument("--esperar-cota", type=int, default=0, metavar="SEG",
+                        help="com --modelo: no limite por minuto, espera SEG segundos e tenta de novo")
+    parser.add_argument("--comparar", help="rótulos já salvos, separados por vírgula: gera comparacao.md")
     parser.add_argument("--pausa", type=float, default=4.0, help="segundos entre chamadas (cota do plano gratuito)")
     args = parser.parse_args()
     logging.basicConfig(level=logging.WARNING, format="[%(levelname)s] %(message)s")
+
+    if args.comparar:
+        out = RESULTS_DIR / "comparacao.md"
+        out.write_text(compare(args.comparar.split(",")), encoding="utf-8")
+        print(out.read_text(encoding="utf-8"))
+        return
 
     cases = json.loads(CASES_FILE.read_text(encoding="utf-8"))
     if args.casos:
@@ -307,25 +374,44 @@ def main() -> None:
         cases = [c for c in cases if c["id"] in wanted]
 
     llm = None if args.rejulgar else pinned_client(args.modelo)
+    if llm and args.modelo and args.esperar_cota:
+        llm.rate_limit_wait = args.esperar_cota
     judge_llm = pinned_client(None) if args.juiz else None
     store = Store()
     label = args.rotulo or args.rejulgar or (args.modelo or "padrao").replace("/", "_")
     saved = {}
     if args.rejulgar:
-        saved = {r["id"]: r for r in json.loads((RESULTS_DIR / f"{args.rejulgar}.json").read_text(encoding="utf-8"))}
-        cases = [c for c in cases if c["id"] in saved]
+        saved = {(r["id"], r.get("rodada", 1)): r
+                 for r in json.loads((RESULTS_DIR / f"{args.rejulgar}.json").read_text(encoding="utf-8"))}
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    out_json = RESULTS_DIR / f"{label}.json"
+    done = {}
+    if args.continuar and out_json.exists():
+        # Retoma: mantém o que já tem resposta e refaz o que ficou sem (cota esgotada no meio).
+        done = {(r["id"], r.get("rodada", 1)): r for r in json.loads(out_json.read_text(encoding="utf-8"))
+                if not r["sem_resposta"]}
+    if args.rejulgar:
+        jobs = [(c, k[1]) for c in cases for k in sorted(saved) if k[0] == c["id"]]
+    else:
+        jobs = [(c, rep) for rep in range(1, args.repeticoes + 1) for c in cases]
     # Encaminhamentos da avaliação não se misturam aos casos reais.
     tools.HANDOFF_FILE = RESULTS_DIR / f".encaminhamentos_{label}.jsonl"
-    tools.HANDOFF_FILE.unlink(missing_ok=True)
+    if not args.continuar:
+        tools.HANDOFF_FILE.unlink(missing_ok=True)
     system_prompt = build_system_prompt(store, config.now())
 
     results = []
-    for i, case in enumerate(cases, 1):
+    for i, (case, rep) in enumerate(jobs, 1):
+        key = (case["id"], rep)
+        tag = f" #{rep}" if rep > 1 or args.repeticoes > 1 else ""
+        print(f"[{i}/{len(jobs)}] {case['id']}{tag}", end=" ", flush=True)
+        if key in done:
+            print("(já feito)")
+            results.append(done[key])
+            continue
         if i > 1 and not args.rejulgar:
             time.sleep(args.pausa)
-        print(f"[{i}/{len(cases)}] {case['id']}", end=" ", flush=True)
-        result = saved[case["id"]] if args.rejulgar else run_case(case, llm, store, args.pausa)
+        result = saved[key] if args.rejulgar else {**run_case(case, llm, store, args.pausa), "rodada": rep}
         already = (result.get("checagens", {}).get("juiz") or {}).get("ok") is not None
         previous_judge = result.get("checagens", {}).get("juiz") if args.rejulgar else None
         result["checagens"] = check_case(case, result["turnos"], system_prompt)
@@ -341,8 +427,9 @@ def main() -> None:
         bad = [k for k, c in result["checagens"].items() if c["ok"] is False]
         print("ok" if not bad and not result["sem_resposta"] else f"FALHOU {bad or 'sem resposta'}")
         results.append(result)
+        _save(out_json, results + [r for k, r in done.items() if k not in {(x["id"], x.get("rodada", 1)) for x in results}])
 
-    (RESULTS_DIR / f"{label}.json").write_text(json.dumps(results, ensure_ascii=False, indent=1), encoding="utf-8")
+    _save(out_json, results)
     report = summarize(results, label, args.juiz)
     (RESULTS_DIR / f"{label}.md").write_text(report, encoding="utf-8")
     print(f"\nRelatório: {RESULTS_DIR / f'{label}.md'}")
