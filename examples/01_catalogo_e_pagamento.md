@@ -10,17 +10,15 @@ _Data/hora simulada do atendimento: 25/03/2026 14:00_
 
 </details>
 
-**Clave:** Olá! Temos ótimas opções de violões até R$ 1.000 disponíveis na loja. Aqui estão alguns destaques:
+**Clave:** Oi! Temos ótimas opções de violões até R$ 1.000,00! Confira alguns dos modelos disponíveis em nosso estoque:
 
-* **Tagima Memphis AC-39 Nylon Natural**: R$ 429,90 (ou R$ 408,40 no PIX / 5x de R$ 85,98 sem juros)
-* **Rozini RC-104 Nylon Estudante**: R$ 459,90 (ou R$ 436,90 no PIX / 5x de R$ 91,98 sem juros)
-* **Shelby SN-100 Folk Aço Preto**: R$ 549,00 (ou R$ 521,55 no PIX / 6x de R$ 91,50 sem juros)
-* **Yamaha C40 Nylon Natural**: R$ 599,90 (ou R$ 569,90 no PIX / 6x de R$ 99,98 sem juros)
-* **Tagima Dallas Tuner Aço Natural**: R$ 749,00 (ou R$ 711,55 no PIX / 7x de R$ 107,00 sem juros)
+- **Tagima Memphis AC-39 Nylon Natural**: R$ 429,90 (ou R$ 408,40 no PIX / até 5x de R$ 85,98 sem juros)
+- **Rozini RC-104 Nylon Estudante**: R$ 459,90 (ou R$ 436,90 no PIX / até 5x de R$ 91,98 sem juros)
+- **Shelby SN-100 Folk Aço Preto**: R$ 549,00 (ou R$ 521,55 no PIX / até 6x de R$ 91,50 sem juros)
+- **Yamaha C40 Nylon Natural**: R$ 599,90 (ou R$ 569,90 no PIX / até 6x de R$ 99,98 sem juros)
+- **Yamaha F310 Aço Natural**: R$ 699,90 (ou R$ 664,90 no PIX / até 6x de R$ 116,65 sem juros)
 
-Temos no total 12 modelos nessa faixa de preço, variando entre encordoamento de aço e nylon.
-
-Algum desses chamou sua atenção ou você prefere nylon ou aço?
+Temos no total 12 modelos nessa faixa de preço. Algum desses te chamou a atenção ou você prefere cordas de nylon ou de aço?
 
 <sub>modelo: gemini-3.6-flash</sub>
 
@@ -28,18 +26,18 @@ Algum desses chamou sua atenção ou você prefere nylon ou aço?
 
 **Cliente:** Tô começando agora, nunca toquei. Qual desses você indicaria?
 
-**Clave:** Para quem está começando agora, os violões com cordas de nylon costumam ser os mais indicados, pois machucam menos os dedos enquanto você cria calosidade nas pontas. 
+**Clave:** Para quem está começando do zero, a indicação mais comum é um **violão com cordas de nylon**. As cordas de nylon são mais macias ao toque, o que ajuda bastante no início, pois causam menos desconforto nos dedos enquanto você ganha prática.
 
-Dos modelos que temos até R$ 1.000, estes dois de nylon fazem bastante sucesso para iniciantes:
+Dentre os modelos que temos até R$ 1.000 com cordas de nylon, duas opções para iniciantes são:
 
-* **Tagima Memphis AC-39 Nylon Natural**: R$ 429,90 (ou R$ 408,40 no PIX / 5x de R$ 85,98 sem juros)
-* **Yamaha C40 Nylon Natural**: R$ 599,90 (ou R$ 569,90 no PIX / 6x de R$ 99,98 sem juros)
+- **Tagima Memphis AC-39 Nylon Natural**: R$ 429,90 (R$ 408,40 no PIX ou até 5x de R$ 85,98 sem juros).
+- **Yamaha C40 Nylon Natural**: R$ 599,90 (R$ 569,90 no PIX ou até 6x de R$ 99,98 sem juros).
 
-O Yamaha C40 é muito procurado por quem está iniciando, mas o Tagima Memphis também é uma excelente alternativa de entrada. 
+Gostaria de ver mais detalhes sobre algum deles ou prefere tirar alguma dúvida sobre o pagamento?
 
-Quer saber mais detalhes sobre algum deles?
+<sub>🛡 verificação final reescreveu a resposta para remover: muito procurada</sub>
 
-<sub>modelo: gemini-3.5-flash-lite</sub>
+<sub>modelo: gemini-3.6-flash</sub>
 
 ---
 
@@ -48,17 +46,32 @@ Quer saber mais detalhes sobre algum deles?
 <details><summary>🔧 Ferramentas consultadas</summary>
 
 - `calcular_pagamento({"produto_id": 81})`
+- `calcular_pagamento({"produto_id": 83})`
 
 </details>
 
-**Clave:** Para o Yamaha C40, as opções de pagamento são:
+**Clave:** Dá para parcelar sim! 
 
-* **PIX:** R$ 569,90 (com 5% de desconto)
-* **Débito ou Boleto:** R$ 599,90
-* **Cartão de crédito:** em até 6x de R$ 99,98 sem juros
+Confira as opções de pagamento para cada um deles no cartão de crédito sem juros, além das outras formas:
 
-Quer aproveitar e garantir o seu? Posso te passar os detalhes sobre a entrega ou retirada na loja.
+**Yamaha C40 Nylon Natural (R$ 599,90):**
+- **PIX:** R$ 569,90 (5% de desconto)
+- **Débito / Boleto:** R$ 599,90
+- **Crédito sem juros:**
+  - 2x de R$ 299,95
+  - 3x de R$ 199,97
+  - até 6x de R$ 99,98
 
-<sub>modelo: gemini-3.5-flash-lite</sub>
+**Tagima Memphis AC-39 Nylon Natural (R$ 429,90):**
+- **PIX:** R$ 408,40 (5% de desconto)
+- **Débito / Boleto:** R$ 429,90
+- **Crédito sem juros:**
+  - 2x de R$ 214,95
+  - 3x de R$ 143,30
+  - até 5x de R$ 85,98
+
+Posso te ajudar a garantir algum deles ou tem mais alguma dúvida?
+
+<sub>modelo: gemini-3.6-flash</sub>
 
 ---

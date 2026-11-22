@@ -123,3 +123,76 @@ def test_fallback_para_provedor_de_reserva_com_historico_limpo():
     # Campos específicos do Gemini não vão para o outro provedor.
     msg = sent["messages"][0]
     assert "extra_content" not in msg and "extra_content" not in msg["tool_calls"][0]
+
+
+def test_resposta_com_popularidade_e_reescrita_sem_ir_para_o_historico():
+    llm = FakeLLM([
+        _msg("O Yamaha C40 é muito procurado por iniciantes!"),
+        _msg("O Yamaha C40 tem cordas de nylon, mais macias para quem está começando."),
+    ])
+    a = Agent(store=Store(), llm=llm)
+    reply = a.reply("Qual violão você indica pra iniciante?")
+
+    assert "procurado" not in reply.text
+    assert reply.rewritten == ["muito procurado"]
+    assert "Verificação interna" in llm.calls[1][-1]["content"]
+    # O histórico guarda só a versão final, sem a instrução interna.
+    assert all("Verificação interna" not in (m.get("content") or "") for m in a.history)
+    assert a.history[-1]["content"] == reply.text
+
+
+def test_reescrita_que_falha_mantem_resposta_original():
+    llm = FakeLLM([
+        _msg("O Yamaha C40 é muito procurado!"),
+        _msg("O Yamaha C40 é o mais vendido!"),
+    ])
+    reply = Agent(store=Store(), llm=llm).reply("Qual violão você indica?")
+    assert reply.text == "O Yamaha C40 é muito procurado!"
+    assert reply.rewritten == []
+
+
+@pytest.fixture
+def handoff_file(tmp_path, monkeypatch):
+    from emporio import tools
+    path = tmp_path / "atendimentos.jsonl"
+    monkeypatch.setattr(tools, "HANDOFF_FILE", path)
+    return path
+
+
+def test_protocolo_inventado_faz_o_agente_chamar_a_ferramenta(handoff_file):
+    # Caso real da avaliação: "já registrei", protocolo EM-8821-ATRASO, nenhuma ferramenta chamada.
+    llm = FakeLLM([
+        _msg("Já registrei o seu caso. Protocolo: EM-8821-ATRASO"),
+        _msg(tool_calls=[("encaminhar_para_humano", {"motivo": "reclamacao", "resumo": "Pedido 8 atrasado"})]),
+        _msg("Registrei seu caso com o protocolo EM-20260325-0001. Retorno em até 24 horas úteis."),
+    ])
+    a = Agent(store=Store(), llm=llm)
+    reply = a.reply("Meu pedido está atrasado!")
+
+    assert "EM-20260325-0001" in reply.text and "8821" not in reply.text
+    assert [c.name for c in reply.tool_calls] == ["encaminhar_para_humano"]
+    assert handoff_file.exists()
+    assert "EM-8821-ATRASO" in reply.rewritten
+    # Histórico coerente: pergunta → chamada da ferramenta → resultado → resposta corrigida.
+    assert [m["role"] for m in a.history] == ["user", "assistant", "tool", "assistant"]
+    assert all("Verificação interna" not in (m.get("content") or "") for m in a.history)
+
+
+def test_promessa_sem_acao_pode_virar_resposta_sem_afirmar(handoff_file):
+    llm = FakeLLM([
+        _msg("Já encaminhei para a gerência!"),
+        _msg("Posso encaminhar seu caso para a equipe. Me passa um telefone para contato?"),
+    ])
+    reply = Agent(store=Store(), llm=llm).reply("Quero falar com o gerente")
+    assert reply.text.startswith("Posso encaminhar")
+    assert not handoff_file.exists()
+
+
+def test_reescrita_de_popularidade_nao_executa_ferramentas(handoff_file):
+    llm = FakeLLM([
+        _msg("O Yamaha C40 é muito procurado!"),
+        _msg(tool_calls=[("encaminhar_para_humano", {"motivo": "reclamacao", "resumo": "x"})]),
+    ])
+    reply = Agent(store=Store(), llm=llm).reply("Qual violão?")
+    assert reply.text == "O Yamaha C40 é muito procurado!"
+    assert not handoff_file.exists()

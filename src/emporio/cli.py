@@ -4,6 +4,7 @@
   uv run emporio --debug                 # mostra as ferramentas chamadas
   uv run emporio --sessao maria          # retoma/salva o histórico "maria"
   uv run emporio --roteiro x.txt -o x.md # roda um roteiro e grava a transcrição
+  uv run emporio --roteiro x.txt --svg x.svg  # grava a saída do terminal como imagem
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ def _print_reply(reply: AgentReply, debug: bool) -> None:
     if debug:
         for c in reply.tool_calls:
             console.print(f"  [dim]⚙ {c.name}({json.dumps(c.arguments, ensure_ascii=False)})[/dim]")
+        if reply.rewritten:
+            console.print(f"  [dim]🛡 reescrita: removido {', '.join(reply.rewritten)}[/dim]")
         console.print(f"  [dim]modelo: {reply.model}[/dim]")
     console.print(f"[bold magenta]{ASSISTANT_NAME}:[/bold magenta]")
     console.print(Markdown(reply.text))
@@ -74,7 +77,10 @@ def run_script(agent: Agent, script: Path, output: Path | None, pause: float) ->
             for c in reply.tool_calls:
                 md.append(f"- `{c.name}({json.dumps(c.arguments, ensure_ascii=False)})`")
             md += ["", "</details>", ""]
-        md += [f"**{ASSISTANT_NAME}:** {reply.text}", "", f"<sub>modelo: {reply.model}</sub>", "", "---", ""]
+        md += [f"**{ASSISTANT_NAME}:** {reply.text}", ""]
+        if reply.rewritten:
+            md += [f"<sub>🛡 verificação final reescreveu a resposta para remover: {', '.join(reply.rewritten)}</sub>", ""]
+        md += [f"<sub>modelo: {reply.model}</sub>", "", "---", ""]
 
     if output:
         output.write_text("\n".join(md), encoding="utf-8")
@@ -87,6 +93,7 @@ def main() -> None:
     parser.add_argument("--sessao", help="nome da sessão para salvar/retomar o histórico")
     parser.add_argument("--roteiro", type=Path, help="arquivo .txt com uma mensagem por linha")
     parser.add_argument("-o", "--saida", type=Path, help="arquivo .md para a transcrição do roteiro")
+    parser.add_argument("--svg", type=Path, help="grava a saída do terminal do roteiro como imagem SVG")
     parser.add_argument("--pausa", type=float, default=13.0, help="segundos entre mensagens do roteiro")
     args = parser.parse_args()
 
@@ -98,7 +105,11 @@ def main() -> None:
         raise SystemExit(1)
 
     if args.roteiro:
+        console.record = bool(args.svg)
         run_script(agent, args.roteiro, args.saida, args.pausa)
+        if args.svg:
+            console.save_svg(str(args.svg), title="uv run emporio --debug")
+            console.print(f"[green]Imagem salva em {args.svg}[/green]")
     else:
         interactive(agent, args.debug)
 

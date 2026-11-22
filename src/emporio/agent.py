@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import config
 from .data import Store
+from .guardrails import ACTION_INSTRUCTION, REWRITE_INSTRUCTION, popularity_claims, unbacked_actions
 from .llm import AllModelsUnavailable, LLMClient
 from .prompts import build_system_prompt
 from .tools import run_tool, tool_schemas
@@ -37,6 +38,7 @@ class AgentReply:
     text: str
     model: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    rewritten: list[str] = field(default_factory=list)  # trechos removidos pela verificação final
 
 
 def _trim(history: list[dict]) -> list[dict]:
@@ -77,37 +79,93 @@ class Agent:
         self._save()
 
     # --- conversa -------------------------------------------------------
+    def _complete(self, system: dict, messages: list[dict], calls: list[ToolCall], rounds: int,
+                  run_tools: bool = True):
+        """Roda o loop modelo → ferramentas até uma resposta final. Devolve (mensagens novas, modelo),
+        ou (mensagens, None) se estourar o teto de rodadas."""
+        new: list[dict] = []
+        model = None
+        for _ in range(rounds):
+            msg, model = self.llm.chat([system, *_trim(self.history), *messages, *new], self.tools)
+            # exclude_none preserva campos extras do provedor (ex.: assinaturas
+            # de "pensamento" do Gemini) que precisam voltar na próxima chamada.
+            new.append(msg.model_dump(exclude_none=True))
+            if not msg.tool_calls:
+                return new, model
+            if not run_tools:
+                return new, None
+            for tc in msg.tool_calls:
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                result = run_tool(self.store, tc.function.name, args)
+                calls.append(ToolCall(tc.function.name, args, result))
+                new.append({"role": "tool", "tool_call_id": tc.id, "content": result})
+        return new, None
+
+    def _tool_results(self, messages: list[dict]) -> list[tuple[str, str]]:
+        """(nome, resultado) de cada ferramenta executada nas mensagens dadas."""
+        names = {tc["id"]: tc["function"]["name"]
+                 for m in messages for tc in (m.get("tool_calls") or [])}
+        return [(names.get(m.get("tool_call_id"), ""), m.get("content") or "")
+                for m in messages if m.get("role") == "tool"]
+
     def reply(self, user_text: str) -> AgentReply:
         system = {"role": "system", "content": build_system_prompt(self.store, config.now())}
         turn: list[dict] = [{"role": "user", "content": user_text}]
         calls: list[ToolCall] = []
-        model = None
+        rewritten: list[str] = []
 
         try:
-            for _ in range(MAX_TOOL_ROUNDS):
-                msg, model = self.llm.chat([system, *_trim(self.history), *turn], self.tools)
-                # exclude_none preserva campos extras do provedor (ex.: assinaturas
-                # de "pensamento" do Gemini) que precisam voltar na próxima chamada.
-                turn.append(msg.model_dump(exclude_none=True))
-                if not msg.tool_calls:
-                    break
-                for tc in msg.tool_calls:
-                    try:
-                        args = json.loads(tc.function.arguments or "{}")
-                    except json.JSONDecodeError:
-                        args = {}
-                    result = run_tool(self.store, tc.function.name, args)
-                    calls.append(ToolCall(tc.function.name, args, result))
-                    turn.append({"role": "tool", "tool_call_id": tc.id, "content": result})
-            else:
-                # Estourou o teto de rodadas sem resposta final.
+            new, model = self._complete(system, turn, calls, MAX_TOOL_ROUNDS)
+            turn += new
+            if model is None:
                 log.warning("Teto de %d rodadas atingido.", MAX_TOOL_ROUNDS)
                 turn.append({"role": "assistant", "content": FALLBACK_REPLY})
+            text = (turn[-1].get("content") or "").strip() or FALLBACK_REPLY
+
+            # Verificação final 1: ação ou protocolo sem execução. A correção pode chamar a ferramenta.
+            problems = unbacked_actions(text, self._tool_results(self.history + turn))
+            if problems and model:
+                fixed = self._correct(system, turn, calls, ACTION_INSTRUCTION, problems,
+                                      lambda t, msgs: unbacked_actions(t, self._tool_results(self.history + msgs)))
+                if fixed:
+                    turn, text, model = fixed
+                    rewritten += problems
+
+            # Verificação final 2: popularidade sem dado. Só reescreve o texto.
+            claims = popularity_claims(text)
+            if claims and model:
+                fixed = self._correct(system, turn, calls, REWRITE_INSTRUCTION, claims,
+                                      lambda t, msgs: popularity_claims(t), allow_tools=False)
+                if fixed:
+                    turn, text, model = fixed
+                    rewritten += claims
         except AllModelsUnavailable as e:
             log.error("Nenhum modelo disponível: %s", e)
             return AgentReply(FALLBACK_REPLY, None, calls)
 
-        text = (turn[-1].get("content") or "").strip() or FALLBACK_REPLY
         self.history.extend(turn)
         self._save()
-        return AgentReply(text, model, calls)
+        return AgentReply(text, model, calls, rewritten)
+
+    def _correct(self, system, turn, calls, instruction, problems, still_bad, allow_tools=True):
+        """Mostra ao modelo a resposta problemática com uma instrução interna e pede outra versão.
+        A instrução e a resposta problemática não entram no histórico: fica só a versão corrigida
+        (e as ferramentas que ela chamou). Devolve (turno, texto, modelo) ou None se não melhorou."""
+        nudge = {"role": "user", "content": instruction.format(trechos=", ".join(f'"{p}"' for p in problems))}
+        base = turn[:-1]
+        new_calls: list[ToolCall] = []
+        new, model = self._complete(system, [*turn, nudge], new_calls, 2 if allow_tools else 1, run_tools=allow_tools)
+        text = (new[-1].get("content") or "").strip() if new else ""
+        if model is None or not text:
+            log.warning("Correção não produziu resposta final: %s", problems)
+            return None
+        fixed_turn = base + new
+        # Se a correção executou uma ferramenta (ex.: abriu o caso de verdade), o histórico precisa registrá-la.
+        if not new_calls and len(still_bad(text, fixed_turn)) >= len(problems):
+            log.warning("Correção não resolveu: %s", problems)
+            return None
+        calls += new_calls
+        return fixed_turn, text, model
