@@ -130,3 +130,11 @@ def test_encaminhamento_novo_e_atualizacao(store, tmp_path, monkeypatch):
     # Atualização não consome número de protocolo; protocolo inventado é recusado.
     assert T.encaminhar_para_humano(store, "outro", "x")["protocolo"] == "EM-20260325-0002"
     assert "erro" in T.encaminhar_para_humano(store, "outro", "x", protocolo="EM-1")
+
+
+def test_preco_promocional_como_valor_solto_nao_acumula_pix(store):
+    # Caso real da avaliação: o modelo passou o preço promocional do Ohana CK-20 (R$ 439,20) como valor.
+    r = T.calcular_pagamento(store, valor=439.2)
+    assert r["pix"].startswith("R$ 439,20")
+    assert "417,24" not in json.dumps(r, ensure_ascii=False)
+    assert T.calcular_pagamento(store, valor=500)["pix"].startswith("R$ 475,00")

@@ -115,6 +115,11 @@ def _product_card(store: Store, p: Product, detailed: bool = False) -> dict:
         expired = store.expired_promotions(p.id)
         if expired and not store.active_promotion(p.id):
             card["promocoes_encerradas"] = [f"{e.description} ({e.discount_percent:g}%)" for e in expired]
+            # Na avaliação, todos os modelos diziam "a promoção acabou" sem dizer quanto custa agora.
+            card["se_perguntarem_da_promocao"] = (
+                f"Encerrada. Informe o preço atual: {_brl(p.price)}"
+                + ("" if p.available else " (e que o produto está esgotado)") + "."
+            )
     return card
 
 
@@ -365,6 +370,11 @@ def calcular_pagamento(store: Store, valor: float | None = None, produto_id: int
             return {"erro": f"Produto {produto_id} não encontrado."}
         promotional = store.active_promotion(p.id) is not None
         valor = _final_price(store, p)
+    elif valor:
+        # A avaliação pegou um modelo passando o preço promocional como valor solto: a ferramenta
+        # aplicava mais 5% de PIX e o desconto acumulava. Valor igual a um preço em promoção = promoção.
+        promotional = any(round(_final_price(store, p), 2) == round(float(valor), 2)
+                          for p in store.products.values() if store.active_promotion(p.id))
     if not valor or valor <= 0:
         return {"erro": "Informe um valor ou um produto."}
 
@@ -463,10 +473,11 @@ def tool_schemas(store: Store) -> list[dict]:
            ["email_ou_telefone"]),
         fn("calcular_pagamento",
            "Calcula opções de pagamento (PIX com desconto, débito, boleto, parcelamento sem juros) "
-           "respeitando promoções e parcelas mínimas. Prefira passar produto_id.",
+           "respeitando promoções e parcelas mínimas. Para UM produto, passe sempre produto_id "
+           "(é o que aplica a promoção e a regra de que o PIX não acumula). Use valor só para totais de vários itens.",
            {
                "produto_id": {"type": "integer"},
-               "valor": {"type": "number", "description": "Valor total em reais, se não houver produto_id."},
+               "valor": {"type": "number", "description": "Total em reais de vários itens; não use para um produto só."},
            }),
         fn("consultar_politicas",
            "Retorna uma seção do manual oficial da loja. Use para regras: trocas, devoluções, "
