@@ -9,14 +9,20 @@ dependencies = [
     "python-dotenv>=1.0",
     "pypdf>=4.0",
     "rich>=13.0",
+    "fastapi>=0.165.0",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0"]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.0",
+]
 
 [project.scripts]
 emporio = "emporio.cli:main"
 emporio-eval = "emporio.evals:main"
+emporio-api = "emporio.api:main"
 
 [build-system]
 requires = ["hatchling"]
