@@ -9,7 +9,8 @@ from pathlib import Path
 
 from . import config
 from .data import Store
-from .guardrails import ACTION_INSTRUCTION, REWRITE_INSTRUCTION, popularity_claims, unbacked_actions
+from .guardrails import (ACTION_INSTRUCTION, DEADLINE_INSTRUCTION, REWRITE_INSTRUCTION, popularity_claims,
+                         unbacked_actions, unbacked_deadlines)
 from .llm import AllModelsUnavailable, LLMClient
 from .prompts import build_system_prompt
 from .tools import run_tool, tool_schemas
@@ -134,7 +135,17 @@ class Agent:
                     turn, text, model = fixed
                     rewritten += problems
 
-            # Verificação final 2: popularidade sem dado. Só reescreve o texto.
+            # Verificação final 2: prazo prometido diferente do oficial. Só reescreve o texto.
+            deadlines = unbacked_deadlines(text, self._tool_results(self.history + turn))
+            if deadlines and model:
+                fixed = self._correct(system, turn, calls, DEADLINE_INSTRUCTION, deadlines,
+                                      lambda t, msgs: unbacked_deadlines(t, self._tool_results(self.history + msgs)),
+                                      allow_tools=False)
+                if fixed:
+                    turn, text, model = fixed
+                    rewritten += deadlines
+
+            # Verificação final 3: popularidade sem dado. Só reescreve o texto.
             claims = popularity_claims(text)
             if claims and model:
                 fixed = self._correct(system, turn, calls, REWRITE_INSTRUCTION, claims,

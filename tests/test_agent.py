@@ -196,3 +196,15 @@ def test_reescrita_de_popularidade_nao_executa_ferramentas(handoff_file):
     reply = Agent(store=Store(), llm=llm).reply("Qual violão?")
     assert reply.text == "O Yamaha C40 é muito procurado!"
     assert not handoff_file.exists()
+
+
+def test_prazo_prometido_apos_encaminhar_e_reescrito(handoff_file):
+    # Caso real da comparação de modelos: protocolo certo, mas "retorno ainda hoje" contra "até 24 horas úteis".
+    llm = FakeLLM([
+        _msg(tool_calls=[("encaminhar_para_humano", {"motivo": "reclamacao", "resumo": "Atraso no pedido 8"})]),
+        _msg("Protocolo EM-20260325-0001. A equipe te liga ainda hoje!"),
+        _msg("Protocolo EM-20260325-0001. Registrei a urgência; o retorno é em até 24 horas úteis."),
+    ])
+    reply = Agent(store=Store(), llm=llm).reply("Quero que resolvam isso hoje")
+    assert "ainda hoje" not in reply.text and "24 horas úteis" in reply.text
+    assert reply.rewritten == ["ainda hoje"]
