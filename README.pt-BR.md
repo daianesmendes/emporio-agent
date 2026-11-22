@@ -12,15 +12,17 @@ Agente conversacional em Python que atende clientes de uma loja de instrumentos 
 Música**): consulta catálogo, preços, promoções, pagamento e pedidos, aplica as políticas da loja e encaminha para a
 equipe humana o que exige ação.
 
-![Sessão no terminal: preço e parcelamento de um violão e, em seguida, uma tentativa de prompt injection pedindo 50% de desconto, que o agente recusa](docs/demo.svg)
+[![Tela de chat da demo: a cliente pergunta por um pedido atrasado, o agente pede o contato da compra antes de consultar, depois explica o atraso com o código de rastreio, abre um caso com protocolo real e o prazo oficial; os detalhes mostram o modelo e as duas ferramentas chamadas](docs/chat.jpg)](https://clave-5wq3.onrender.com)
 
 **Destaques**
 
-- **Function calling** sobre dados estruturados (CSVs) e um manual de políticas em PDF — o modelo decide *o que* consultar; preço, parcelas e prazos são calculados em código.
+- **Demo no ar:** uma tela de chat sobre uma API HTTP (FastAPI), empacotada com Docker e publicada no Render como código. Uma versão nova só vai ao ar depois que os testes e a checagem do container passam no CI.
+- **Function calling** sobre dados estruturados (CSVs) e um manual de políticas em PDF: o modelo decide *o que* consultar; preço, parcelas e prazos são calculados em código.
+- **Verificação final em código:** protocolo inventado, ação declarada sem execução, prazo que a loja não garante e popularidade sem dado são barrados antes de a resposta chegar ao cliente.
 - **Proteção de dados:** pedidos só são exibidos com o e-mail ou telefone do dono.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
+- **Avaliação automatizada** com 35 casos, checagens em código e juiz LLM, mais uma **comparação de modelos** com rodadas repetidas. Ver [Avaliação](#avaliação).
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
-- **Avaliação automatizada** com 35 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
 - **90 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
@@ -37,6 +39,8 @@ cp .env.example .env      # cole a chave em LLM_API_KEY (e, se quiser, em LLM_FA
 uv sync                   # ou: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uv run emporio --debug
 ```
+
+![Sessão no terminal: preço e parcelamento de um violão e, em seguida, uma tentativa de prompt injection pedindo 50% de desconto, que o agente recusa](docs/demo.svg)
 
 | Comando | O que faz |
 |---|---|

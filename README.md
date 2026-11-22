@@ -12,18 +12,20 @@ A conversational agent in Python that serves customers of a musical instrument s
 Música**, in Campo Grande, Brazil). It looks up the catalog, prices, promotions, payment options and orders, applies
 the store's policies, and hands off to the human team whatever requires action.
 
-![Terminal session: price and installments for a guitar, then a prompt-injection attempt asking for a 50% discount, which the agent declines](docs/demo.svg)
+[![Chat page of the live demo: the customer asks about a late order, the agent asks for the purchase contact before looking it up, then explains the delay with the tracking code, opens a case with a real ticket number and the official deadline; the details show the model and the two tools it called](docs/chat.jpg)](https://clave-5wq3.onrender.com)
 
 > **Language note:** the store and its customers are Brazilian, so the agent talks to customers in Portuguese,
 > and the source data, tool names, code comments, commit messages and example transcripts are in Portuguese as well.
 
 **Highlights**
 
-- **Function calling** over structured data (CSVs) and a PDF policy manual — the model decides *what* to look up; prices, installments and deadlines are computed in code.
+- **Live demo:** a chat page on top of an HTTP API (FastAPI), packaged with Docker and deployed on Render as code. A new version goes live only after the tests and the container check pass in CI.
+- **Function calling** over structured data (CSVs) and a PDF policy manual: the model decides *what* to look up; prices, installments and deadlines are computed in code.
+- **Final checks in code:** invented ticket numbers, actions claimed but not executed, deadlines the store does not guarantee and unsupported popularity claims are caught before the answer reaches the customer.
 - **Data protection:** order details are only shown when the owner's e-mail or phone number is provided.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
+- **Automated evaluation** with 35 cases, checks in code and an LLM judge, plus a **model comparison** with repeated runs. See [Evaluation](#evaluation).
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
-- **Automated evaluation** with 35 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
 - **90 tests** that run without calling the LLM, in CI on every push.
 
 ---
@@ -40,6 +42,8 @@ cp .env.example .env      # paste the key into LLM_API_KEY (and optionally LLM_F
 uv sync                   # or: python -m venv .venv && source .venv/bin/activate && pip install -e .
 uv run emporio --debug
 ```
+
+![Terminal session: price and installments for a guitar, then a prompt-injection attempt asking for a 50% discount, which the agent declines](docs/demo.svg)
 
 | Command | What it does |
 |---|---|
