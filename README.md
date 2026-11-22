@@ -1,18 +1,14 @@
 # 🎸 Clave — customer service agent for a musical instrument store
 
+[![tests](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml)
+
 _[Leia em português](README.pt-BR.md)_
 
 A conversational agent in Python that serves customers of a musical instrument store (the fictional **Empório da
 Música**, in Campo Grande, Brazil). It looks up the catalog, prices, promotions, payment options and orders, applies
 the store's policies, and hands off to the human team whatever requires action.
 
-```
-You:   Quanto custa o Takamine GD20?          (How much is the Takamine GD20?)
-  ⚙ detalhes_produto({"produto": "Takamine GD20"})
-  ⚙ calcular_pagamento({"produto_id": 95})
-Clave: O Takamine GD20 Dreadnought Natural está disponível por R$ 2.199,00.
-       No PIX sai por R$ 2.089,05 (5% off) ou em até 12x de R$ 183,25 sem juros. [...]
-```
+![Terminal session: price and installments for a guitar, then a prompt-injection attempt asking for a 50% discount, which the agent declines](docs/demo.svg)
 
 > **Language note:** the store and its customers are Brazilian, so the agent talks to customers in Portuguese,
 > and the source data, tool names, code comments, commit messages and example transcripts are in Portuguese as well.
@@ -23,7 +19,8 @@ Clave: O Takamine GD20 Dreadnought Natural está disponível por R$ 2.199,00.
 - **Data protection:** order details are only shown when the owner's e-mail or phone number is provided.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
-- **29 tests** that run without calling the LLM.
+- **Automated evaluation** with 33 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
+- **51 tests** that run without calling the LLM, in CI on every push.
 
 ---
 
@@ -46,6 +43,7 @@ uv run emporio --debug
 | `emporio --debug` | Shows which tools were called and which model answered |
 | `emporio --sessao name` | Saves and resumes the conversation history |
 | `emporio --roteiro file.txt -o out.md` | Runs a scripted conversation and saves the transcript |
+| `emporio-eval` | Runs the automated evaluation (see [Evaluation](#evaluation)) |
 | `pytest` | Runs the tests |
 
 Other settings (models, backup provider, reference date) are documented in [`.env.example`](.env.example).
@@ -74,13 +72,15 @@ flowchart LR
     A <--> L[llm.py<br/>fallback]
     L <--> G[(Gemini)]
     L <-.backup.-> GQ[(Groq)]
+    A --> GR[guardrails.py<br/>final check]
     A --> T[tools.py<br/>6 tools]
     T --> S[data.py] --> CSV[(CSVs)]
     T --> PO[policies.py] --> PDF[(policy PDF)]
 ```
 
 For each message, the agent builds the prompt, the LLM picks tools, Python runs them and returns the results, until
-the final answer (at most 4 rounds).
+the final answer (at most 4 rounds). Before it reaches the customer, the answer goes through a final check in code
+(see [Validation](#validation)).
 
 | Tool | Purpose |
 |---|---|
@@ -144,14 +144,58 @@ that does not exist in the manual, an unsourced claim about a product, and an ac
 Fixes were structural where possible — each product now carries its precomputed installment plan, and a tool can update
 an open case. The affected conversations were regenerated.
 
+**Final check in code** ([`guardrails.py`](src/emporio/guardrails.py)). Two failures kept coming back even with a prompt
+rule against them, so the rule moved to code. Before the answer reaches the customer:
+
+- a ticket number that did not come from a tool, or "I've registered / forwarded it" without a successful hand-off
+  call, sends the model back with an internal instruction — and it may now **call the tool for real**;
+- claims of popularity ("very popular", "best-seller") make the model rewrite the answer without them. The data
+  contradicts them: the Yamaha C40, called "very sought after" in an earlier transcript, has no recorded sales.
+
+The internal instruction never goes into the history: only the corrected answer (and any tool it called) is kept.
+
 ---
+
+## Evaluation
+
+`uv run emporio-eval` runs [33 cases](evals/casos.json) — catalog, payment, orders and privacy, policies,
+scope and security, hand-off — each in a fresh conversation, and checks the answers in two layers:
+
+| Layer | What it checks |
+|---|---|
+| **Code** (deterministic) | required/forbidden tools (e.g. never `consultar_pedido` without the owner's contact); expected values from the data; text that must not appear (another customer's data, the system prompt, a 50%-off price); **every R$ amount in the answer must exist in the tool results, the prompt or the customer's message**; ticket numbers and stated actions backed by a tool call; no popularity claims; no tool names leaking to the customer |
+| **LLM judge** (optional, `--juiz`) | a per-case criterion (tone, empathy, policy adherence), judged only against the conversation, the tool results and the store's official data |
+
+Results on the free tier (Gemini with fallback; judge on Groq):
+
+| Run | Passed | What failed |
+|---|---|---|
+| [Before the fixes](evals/resultados/antes_das_correcoes.md) | 30/33 | **invented ticket number** ("EM-8821-ATRASO", and "already registered" with no tool call); current price omitted for an expired promotion; tracking code omitted |
+| [After the fixes](evals/resultados/depois_das_correcoes.md) | 29/33 | no hallucinations; terse answers — correct ticket, but no explanation of the delay or of the warranty; tracking code omitted |
+
+Zero failures in both runs on: untraceable amounts, other customers' data, prompt leaks, prompt injection and
+technical leaks.
+
+**What the evaluation taught me**
+
+- **It finds what manual review misses.** The invented ticket number appeared in the very first run. It became a
+  check in code and a unit test that reproduces the real case.
+- **The judge also needs evaluating.** Of its first failures, one was ambiguous wording in my criterion ("refuse in
+  one sentence"), one was missing context (it did not know the store's official phone), and one was tool results I had
+  truncated. Each was checked against the answer before being accepted or fixed.
+- **One run is not a measurement.** The pass rate barely moved, but *which* cases failed changed: LLMs are not
+  deterministic, and on the free tier the answering model varies with quota — the lightest model (`flash-lite`)
+  answered most turns. Next step: repeat each case N times and compare models pinned with `--modelo`.
+- **Free-tier quotas shape the setup.** The judge hit Groq's per-minute and per-day token limits; a judge that is
+  unavailable counts as "not evaluated", never as a failure, and `--rejulgar` re-judges saved answers without calling
+  the agent again.
 
 ## Assumptions, limitations and next steps
 
 - **Reference date:** orders go up to March 2026, so the agent uses `AGENT_NOW=2026-03-25 14:00` for deadlines to make sense. Since the system has no delivery-received date, the estimated delivery date is used instead.
 - **Limitations:** free-tier quotas and latency vary; search is keyword-based, not semantic; shipping to other cities
   is not calculated; cases are stored in a local file; and e-mail/phone verification is weak for production.
-- **Next steps:** automated evaluation with a broad question set and LLM-as-judge; tracing (Langfuse or OpenTelemetry);
+- **Next steps:** tracing (Langfuse or OpenTelemetry);
   an API with a WhatsApp webhook and OTP verification; Postgres instead of CSVs; semantic search over the catalog.
 
 ---

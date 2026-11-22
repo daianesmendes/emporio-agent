@@ -1,18 +1,14 @@
 # 🎸 Clave — agente de atendimento para loja de instrumentos
 
+[![tests](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml)
+
 _[Read in English](README.md)_
 
 Agente conversacional em Python que atende clientes de uma loja de instrumentos musicais (a fictícia **Empório da
 Música**): consulta catálogo, preços, promoções, pagamento e pedidos, aplica as políticas da loja e encaminha para a
 equipe humana o que exige ação.
 
-```
-Você: Quanto custa o Takamine GD20?
-  ⚙ detalhes_produto({"produto": "Takamine GD20"})
-  ⚙ calcular_pagamento({"produto_id": 95})
-Clave: O Takamine GD20 Dreadnought Natural está disponível por R$ 2.199,00.
-       No PIX sai por R$ 2.089,05 (5% off) ou em até 12x de R$ 183,25 sem juros. [...]
-```
+![Sessão no terminal: preço e parcelamento de um violão e, em seguida, uma tentativa de prompt injection pedindo 50% de desconto, que o agente recusa](docs/demo.svg)
 
 **Destaques**
 
@@ -20,7 +16,8 @@ Clave: O Takamine GD20 Dreadnought Natural está disponível por R$ 2.199,00.
 - **Proteção de dados:** pedidos só são exibidos com o e-mail ou telefone do dono.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
-- **29 testes** que rodam sem chamar o LLM.
+- **Avaliação automatizada** com 33 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
+- **51 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
 
@@ -43,6 +40,7 @@ uv run emporio --debug
 | `emporio --debug` | Mostra as ferramentas chamadas e o modelo que respondeu |
 | `emporio --sessao nome` | Salva e retoma o histórico da conversa |
 | `emporio --roteiro arquivo.txt -o saida.md` | Executa uma conversa roteirizada e grava a transcrição |
+| `emporio-eval` | Roda a avaliação automatizada (ver [Avaliação](#avaliação)) |
 | `pytest` | Roda os testes |
 
 As demais opções (modelos, provedor de reserva, data de referência) estão comentadas no [`.env.example`](.env.example).
@@ -71,13 +69,15 @@ flowchart LR
     A <--> L[llm.py<br/>fallback]
     L <--> G[(Gemini)]
     L <-.reserva.-> GQ[(Groq)]
+    A --> GR[guardrails.py<br/>verificação final]
     A --> T[tools.py<br/>6 ferramentas]
     T --> S[data.py] --> CSV[(CSVs)]
     T --> PO[policies.py] --> PDF[(manual PDF)]
 ```
 
 A cada mensagem, o agente monta o prompt, o LLM escolhe ferramentas, o Python as executa e devolve o resultado, até a
-resposta final (máximo de 4 rodadas).
+resposta final (máximo de 4 rodadas). Antes de chegar ao cliente, a resposta passa por uma verificação final em código
+(ver [Validação](#validação)).
 
 | Ferramenta | Função |
 |---|---|
@@ -140,14 +140,58 @@ exigência inexistente no manual, um elogio sem fonte e uma ação declarada sem
 de preferência, estruturais: cada produto já traz o parcelamento calculado, e há uma ferramenta para complementar um caso
 aberto. As conversas afetadas foram regeradas.
 
+**Verificação final em código** ([`guardrails.py`](src/emporio/guardrails.py)). Duas falhas voltavam mesmo com regra no
+prompt, então a regra virou código. Antes de a resposta chegar ao cliente:
+
+- protocolo que não veio de ferramenta, ou "registrei / encaminhei" sem uma chamada bem-sucedida de encaminhamento,
+  devolve a resposta ao modelo com uma instrução interna — e ele pode **chamar a ferramenta de verdade**;
+- afirmação de popularidade ("muito procurado", "mais vendido") faz o modelo reescrever a resposta sem ela. Os dados
+  desmentem: o Yamaha C40, chamado de "muito procurado" numa conversa anterior, não tem nenhuma venda registrada.
+
+A instrução interna nunca entra no histórico: fica só a resposta corrigida (e a ferramenta que ela chamou, se houver).
+
 ---
+
+## Avaliação
+
+`uv run emporio-eval` roda [33 casos](evals/casos.json) — catálogo, pagamento, pedidos e LGPD, políticas, escopo e
+segurança, encaminhamento —, cada um numa conversa nova, e confere as respostas em duas camadas:
+
+| Camada | O que confere |
+|---|---|
+| **Código** (determinística) | ferramentas obrigatórias/proibidas (ex.: nunca `consultar_pedido` sem o contato do dono); valores esperados tirados dos dados; textos que não podem aparecer (dados de outro cliente, o prompt, um preço com 50% off); **todo valor em R$ da resposta precisa existir nos resultados das ferramentas, no prompt ou na fala do cliente**; protocolos e ações declaradas com chamada de ferramenta; nada de popularidade; nenhum nome de ferramenta exposto ao cliente |
+| **Juiz LLM** (opcional, `--juiz`) | um critério por caso (tom, empatia, aderência à política), julgado só com a conversa, os resultados das ferramentas e os dados oficiais da loja |
+
+Resultados no plano gratuito (Gemini com fallback; juiz no Groq):
+
+| Rodada | Aprovados | O que falhou |
+|---|---|---|
+| [Antes das correções](evals/resultados/antes_das_correcoes.md) | 30/33 | **protocolo inventado** ("EM-8821-ATRASO", e "já registrei" sem chamar a ferramenta); preço atual omitido numa promoção encerrada; código de rastreio omitido |
+| [Depois das correções](evals/resultados/depois_das_correcoes.md) | 29/33 | nenhuma alucinação; respostas secas — protocolo correto, mas sem explicar o atraso ou a garantia; código de rastreio omitido |
+
+Zero falhas nas duas rodadas em: valores sem origem, dados de outro cliente, vazamento do prompt, prompt injection e
+vazamento técnico.
+
+**O que a avaliação me ensinou**
+
+- **Ela acha o que a revisão manual não acha.** O protocolo inventado apareceu logo na primeira rodada. Virou checagem
+  em código e um teste unitário que reproduz o caso real.
+- **O juiz também precisa ser avaliado.** Das primeiras reprovações dele, uma era ambiguidade do meu critério ("recusar
+  em uma frase"), uma era falta de contexto (ele não conhecia o telefone oficial) e uma era resultado de ferramenta que
+  eu tinha cortado. Cada uma foi conferida contra a resposta antes de ser aceita ou corrigida.
+- **Uma rodada não é uma medida.** A taxa quase não mudou, mas *quais* casos falharam mudou: LLM não é determinístico, e
+  no plano gratuito o modelo que responde varia com a cota — o mais leve (`flash-lite`) respondeu a maioria dos turnos.
+  Próximo passo: repetir cada caso N vezes e comparar modelos fixados com `--modelo`.
+- **A cota gratuita molda a montagem.** O juiz bateu nos limites de tokens por minuto e por dia do Groq; juiz
+  indisponível conta como "não avaliado", nunca como reprovação, e `--rejulgar` refaz o julgamento das respostas
+  salvas sem chamar o agente de novo.
 
 ## Suposições, limitações e próximos passos
 
 - **Data de referência:** os pedidos vão até março de 2026, então o agente usa `AGENT_NOW=2026-03-25 14:00` para os prazos fazerem sentido. Como não existe data de recebimento no sistema, a previsão de entrega serve de referência.
 - **Limitações:** a cota e a latência do plano gratuito variam; a busca é por palavra-chave, não semântica; o frete
   para outras cidades não é calculado; os casos ficam num arquivo local; e a verificação por e-mail ou telefone é fraca para produção.
-- **Próximos passos:** avaliação automatizada com um conjunto amplo de perguntas e LLM-as-judge; tracing (Langfuse ou
+- **Próximos passos:** tracing (Langfuse ou
   OpenTelemetry); API com webhook de WhatsApp e verificação por OTP; Postgres no lugar dos CSVs; busca semântica no catálogo.
 
 ---

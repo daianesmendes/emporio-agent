@@ -59,6 +59,8 @@ class LLMClient:
         }
         self._cooldown_until: dict[str, float] = {}
         self._unavailable: set[str] = set()
+        # Uma entrada por chamada bem-sucedida (modelo, tokens, segundos) — usada na avaliação.
+        self.usage: list[dict] = []
 
     # Mantido para compatibilidade com quem usa um único cliente (ex.: testes).
     @property
@@ -81,9 +83,17 @@ class LLMClient:
                 if key in self._unavailable or self._cooldown_until.get(key, 0) > time.time():
                     continue
                 try:
+                    started = time.perf_counter()
                     resp = self.clients[provider.name].chat.completions.create(
                         model=model, messages=payload, tools=tools, temperature=0.3, **extra,
                     )
+                    u = getattr(resp, "usage", None)
+                    self.usage.append({
+                        "modelo": model,
+                        "segundos": round(time.perf_counter() - started, 2),
+                        "tokens_entrada": getattr(u, "prompt_tokens", 0) or 0,
+                        "tokens_saida": getattr(u, "completion_tokens", 0) or 0,
+                    })
                     return resp.choices[0].message, model
                 except openai.NotFoundError as e:
                     log.warning("Modelo %s não existe no provedor; removido da lista.", model)

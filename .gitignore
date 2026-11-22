@@ -13,3 +13,7 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Resultados da avaliação: só os relatórios .md vão para o repositório
+evals/resultados/*.json
+evals/resultados/.encaminhamentos_*
