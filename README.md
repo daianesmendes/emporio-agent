@@ -1,8 +1,12 @@
-# 🎸 Clave — customer service agent for a musical instrument store
+# 🎸 Clave: customer service agent for a musical instrument store
 
 [![tests](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml/badge.svg)](https://github.com/daianesmendes/emporio-agent/actions/workflows/tests.yml)
 
 _[Leia em português](README.pt-BR.md)_
+
+**▶ Live demo: [clave-5wq3.onrender.com](https://clave-5wq3.onrender.com)** · chat with the agent in the browser; each
+answer shows the tools it consulted and what the final checks corrected. Free instance: after a period without
+visits, the first access takes about a minute to wake up.
 
 A conversational agent in Python that serves customers of a musical instrument store (the fictional **Empório da
 Música**, in Campo Grande, Brazil). It looks up the catalog, prices, promotions, payment options and orders, applies
@@ -20,7 +24,7 @@ the store's policies, and hands off to the human team whatever requires action.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
 - **Automated evaluation** with 35 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
-- **87 tests** that run without calling the LLM, in CI on every push.
+- **90 tests** that run without calling the LLM, in CI on every push.
 
 ---
 
@@ -77,6 +81,17 @@ docker run -p 8010:10000 --env-file .env clave     # → http://localhost:8010
 ```
 
 CI builds the image on every push and checks that the container starts and answers `/saude`.
+
+**Chat page.** `/` serves a plain HTML/JS page that talks to the API itself (front → API → agent). The model's text is
+escaped before formatting (no script injection), no third-party assets are loaded, and the page warns that messages go
+to a third-party model.
+
+**Deployment.** The demo runs on [Render](https://render.com) (free plan), built from the same Dockerfile, and is
+described as code in [`render.yaml`](render.yaml): health check on `/saude`, **deploys only after the GitHub Actions
+checks pass**, model order taken from the measurements, and API keys entered in the dashboard, never in the repo.
+Why a container host: an answer can take 5–20 s waiting for the model and conversations are kept in files, which fit a
+long-running process better than short serverless functions (my other project, Lode, runs serverless on Vercel because
+it answers in under a second from a database). Hugging Face Spaces now charges for Docker.
 
 ---
 
@@ -287,7 +302,8 @@ hand-off cases, 3 runs each, same model and judge ([before](evals/resultados/enc
 ## Assumptions, limitations and next steps
 
 - **Reference date:** orders go up to March 2026, so the agent uses `AGENT_NOW=2026-03-25 14:00` for deadlines to make sense. Since the system has no delivery-received date, the estimated delivery date is used instead.
-- **Limitations:** free-tier quotas and latency vary; search is keyword-based, not semantic; shipping to other cities
+- **Limitations:** free-tier quotas and latency vary; the free Render instance sleeps after a period without visits
+  (about a minute to wake up); search is keyword-based, not semantic; shipping to other cities
   is not calculated; conversations and cases are stored in local files (in a container they are lost on restart — a
   database would fix it); the rate limits live in memory, which is enough for one container but not for several
   replicas (they would need a shared store such as Redis); and e-mail/phone verification is weak for production.
