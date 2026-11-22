@@ -70,7 +70,7 @@ pedido, chama `Agent.reply()` e devolve JSON — ferramentas, verificações fin
 
 ```bash
 docker build -t clave .
-docker run -p 8010:7860 --env-file .env clave      # → http://localhost:8010/docs
+docker run -p 8010:10000 --env-file .env clave     # → http://localhost:8010
 ```
 
 O CI monta a imagem a cada push e confere que o container liga e responde em `/saude`.

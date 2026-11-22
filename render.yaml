@@ -1,0 +1,31 @@
+# Infraestrutura como código: o serviço do Clave no Render (plano grátis, a partir do Dockerfile).
+# Criar no painel do Render: New > Blueprint > escolher este repositório.
+services:
+  - type: web
+    name: clave
+    runtime: docker
+    plan: free
+    region: virginia            # leste dos EUA: o mais perto do Brasil entre as opções
+    healthCheckPath: /saude
+    autoDeployTrigger: checksPass   # só publica se o GitHub Actions (testes + container) passar
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      # Primeiro os modelos que responderam bem nas medições: cada modelo que falha pode custar até 30 s.
+      - key: LLM_MODELS
+        value: gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3-flash-preview,gemini-3.1-flash-lite
+      - key: LLM_REASONING_EFFORT
+        value: low
+      - key: AGENT_NOW
+        value: "2026-03-25 14:00"
+      - key: LLM_FALLBACK_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_FALLBACK_MODELS
+        value: openai/gpt-oss-120b,qwen/qwen3.8-27b
+      # Segredos: não ficam no repositório; o Render pede o valor no painel, ao criar o serviço.
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_FALLBACK_API_KEY
+        sync: false

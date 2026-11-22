@@ -1,6 +1,6 @@
 # Imagem da API do Clave.
 #   docker build -t clave .
-#   docker run -p 8010:7860 --env-file .env clave      → http://localhost:8010/docs
+#   docker run -p 8010:10000 --env-file .env clave     → http://localhost:8010
 # As chaves entram na hora de rodar (--env-file); nunca ficam dentro da imagem.
 
 FROM python:3.12-slim
@@ -24,15 +24,15 @@ COPY src ./src
 COPY data ./data
 RUN uv sync --frozen --no-dev
 
-# Usuário sem privilégios (id 1000, o que o Hugging Face Spaces usa), que só escreve nas conversas.
+# Usuário sem privilégios, que só escreve na pasta das conversas.
 RUN useradd --uid 1000 --create-home clave && mkdir -p /app/.sessions && chown -R clave /app/.sessions
 USER clave
 
-# 0.0.0.0 = aceitar conexões de fora do container; 7860 = porta padrão do Hugging Face Spaces.
+# 0.0.0.0 = aceitar conexões de fora do container; 10000 = porta padrão do Render.
 ENV HOST=0.0.0.0 \
-    PORT=7860 \
+    PORT=10000 \
     PATH="/app/.venv/bin:$PATH"
-EXPOSE 7860
+EXPOSE 10000
 
 # O próprio Docker chama /saude periodicamente e marca o container como "unhealthy" se parar.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

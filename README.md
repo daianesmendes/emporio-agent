@@ -73,7 +73,7 @@ the request, calls `Agent.reply()` and returns JSON — tools, final checks and 
 
 ```bash
 docker build -t clave .
-docker run -p 8010:7860 --env-file .env clave      # → http://localhost:8010/docs
+docker run -p 8010:10000 --env-file .env clave     # → http://localhost:8010
 ```
 
 CI builds the image on every push and checks that the container starts and answers `/saude`.
