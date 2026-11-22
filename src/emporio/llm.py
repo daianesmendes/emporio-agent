@@ -22,6 +22,7 @@ from .config import Provider, Settings
 log = logging.getLogger(__name__)
 
 COOLDOWN_SECONDS = 60
+PROVIDER_DOWN_SECONDS = 300  # chave inválida: o provedor inteiro sai da fila por 5 min
 REQUEST_TIMEOUT = 30
 
 # Campos padrão de mensagem. Provedores diferentes podem rejeitar campos
@@ -31,6 +32,14 @@ _STANDARD_KEYS = {"role", "content", "tool_calls", "tool_call_id", "name"}
 
 class AllModelsUnavailable(RuntimeError):
     pass
+
+
+def _is_key_error(e: Exception) -> bool:
+    """Chave inválida ou sem permissão. O Gemini devolve 400 "API key not valid"; outros, 401/403.
+    Nesse caso tentar outro modelo do mesmo provedor não adianta: a chave é a mesma."""
+    if isinstance(e, (openai.AuthenticationError, openai.PermissionDeniedError)):
+        return True
+    return isinstance(e, openai.BadRequestError) and "api key" in (getattr(e, "message", "") or "").lower()
 
 
 def _portable(messages: list[dict]) -> list[dict]:
@@ -59,6 +68,7 @@ class LLMClient:
         }
         self._cooldown_until: dict[str, float] = {}
         self._unavailable: set[str] = set()
+        self._provider_down_until: dict[str, float] = {}
         # Com um único modelo (ex.: avaliação com modelo fixo) não há para onde cair: em vez de desistir
         # no 429 de limite por minuto, espera e tenta de novo. 0 = comportamento normal (fallback).
         self.rate_limit_wait = 0
@@ -94,6 +104,8 @@ class LLMClient:
             # O provedor principal recebe o histórico como está; os demais, só campos padrão.
             payload = messages if i == 0 else _portable(messages)
             extra = {"reasoning_effort": provider.reasoning_effort} if provider.reasoning_effort else {}
+            if self._provider_down_until.get(provider.name, 0) > time.time():
+                continue
             for model in provider.models:
                 key = f"{provider.name}:{model}"
                 if key in self._unavailable:
@@ -113,14 +125,24 @@ class LLMClient:
                         "tokens_saida": getattr(u, "completion_tokens", 0) or 0,
                     })
                     return resp.choices[0].message, model
+                except (openai.AuthenticationError, openai.PermissionDeniedError, openai.BadRequestError) as e:
+                    if _is_key_error(e):
+                        # A mensagem do provedor não contém a chave: é seguro registrar.
+                        log.error("Chave inválida no provedor %s (%s); usando o próximo provedor.",
+                                  provider.name, (getattr(e, "message", "") or "")[:160])
+                        self._provider_down_until[provider.name] = time.time() + PROVIDER_DOWN_SECONDS
+                        errors.append(f"{provider.name}: chave inválida")
+                        break
+                    if not isinstance(e, openai.BadRequestError):
+                        raise
+                    # Ex.: o modelo não aceita algo do histórico vindo de outro provedor.
+                    log.warning("%s recusou a requisição (400: %s); usando o próximo modelo.",
+                                model, (e.message or "")[:160])
+                    errors.append(f"{model}: 400 {e.message}")
                 except openai.NotFoundError as e:
                     log.warning("Modelo %s não existe no provedor; removido da lista.", model)
                     self._unavailable.add(key)
                     errors.append(f"{model}: 404 {e.message}")
-                except openai.BadRequestError as e:
-                    # Ex.: o modelo não aceita algo do histórico vindo de outro provedor.
-                    log.warning("%s recusou a requisição (400); usando o próximo modelo.", model)
-                    errors.append(f"{model}: 400 {e.message}")
                 except (openai.RateLimitError, openai.InternalServerError,
                         openai.APITimeoutError, openai.APIConnectionError) as e:
                     # Cota (429), sobrecarga (503) ou lentidão: não insiste no mesmo

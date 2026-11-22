@@ -208,3 +208,43 @@ def test_prazo_prometido_apos_encaminhar_e_reescrito(handoff_file):
     reply = Agent(store=Store(), llm=llm).reply("Quero que resolvam isso hoje")
     assert "ainda hoje" not in reply.text and "24 horas úteis" in reply.text
     assert reply.rewritten == ["ainda hoje"]
+
+
+def test_chave_invalida_pula_o_provedor_inteiro(caplog):
+    # Caso real do deploy no Render: chave do Gemini colada errada → os 4 modelos devolviam 400,
+    # em toda chamada, antes de o Groq responder.
+    from emporio.config import Provider
+
+    reserva = Provider("reserva", "http://y", "k2", ["r1"])
+    client = LLMClient(Settings(base_url="http://x", api_key="k", models=["m1", "m2", "m3"],
+                                now_override="", fallback=reserva))
+    tried = []
+
+    def principal(model, **kwargs):
+        tried.append(model)
+        err = openai.BadRequestError.__new__(openai.BadRequestError)
+        err.message = "API key not valid. Please pass a valid API key."
+        raise err
+
+    client.clients["principal"] = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=principal)))
+    client.clients["reserva"] = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(
+        create=lambda model, **kw: SimpleNamespace(choices=[SimpleNamespace(message="ok")]))))
+
+    assert client.chat([], []) == ("ok", "r1")
+    assert client.chat([], []) == ("ok", "r1")
+    assert tried == ["m1"]  # um modelo basta para saber que a chave é inválida; depois o provedor é pulado
+    assert "Chave inválida no provedor principal (API key not valid" in caplog.text
+
+
+def test_400_comum_continua_tentando_o_proximo_modelo():
+    client = LLMClient(Settings(base_url="http://x", api_key="k", models=["m1", "m2"], now_override=""))
+
+    def create(model, **kwargs):
+        if model == "m1":
+            err = openai.BadRequestError.__new__(openai.BadRequestError)
+            err.message = "Invalid value for tool_calls"
+            raise err
+        return SimpleNamespace(choices=[SimpleNamespace(message="ok")])
+
+    client.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
+    assert client.chat([], []) == ("ok", "m2")
