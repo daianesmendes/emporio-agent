@@ -1,6 +1,6 @@
 # Avaliação — cmp_gemini-3.5-flash-lite
 
-_Data de referência do agente: 25/03/2026 14:00 · 12 casos × 3 rodadas · juiz: qwen/qwen3.8-27b_
+_Data de referência do agente: 25/03/2026 14:00 · 12 casos × 3 rodadas · juiz: desligado_
 
 **Aprovados: 23/36 (64%)**
 
@@ -30,6 +30,7 @@ Entre as rodadas respondidas — casos sempre aprovados: 8/12 · instáveis (pas
 | ferramentas | 3 | 0 |
 | juiz | 6 | 0 |
 | nao_deve_conter | 0 | 0 |
+| prazos_rastreaveis | 1 | 0 |
 | sem_popularidade | 0 | 0 |
 | sem_vazamento_tecnico | 0 | 0 |
 | valores_rastreaveis | 0 | 0 |
@@ -180,7 +181,7 @@ Ferramentas: `encaminhar_para_humano`
 
 </details>
 
-<details><summary><b>reclamacao_atraso</b> (rodada 2) — juiz: O agente prometeu que a equipe entraria em contato 'ainda hoje', o que contradiz o prazo oficial de retorno de 24 horas úteis informado pela ferramenta e viola a regra de não prometer o que não pode cumprir.</summary>
+<details><summary><b>reclamacao_atraso</b> (rodada 2) — prazos_rastreaveis: prometeu ['ainda hoje']; juiz: O agente prometeu que a equipe entraria em contato 'ainda hoje', o que contradiz o prazo oficial de retorno de 24 horas úteis informado pela ferramenta e viola a regra de não prometer o que não pode cumprir.</summary>
 
 **Cliente:** Meu pedido tá atrasado, isso é um absurdo! Meu telefone é (67) 99654-7821
 

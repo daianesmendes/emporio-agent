@@ -1,6 +1,6 @@
 # Avaliação — cmp_gemini-3.1-flash-lite
 
-_Data de referência do agente: 25/03/2026 14:00 · 12 casos × 3 rodadas · juiz: qwen/qwen3.8-27b_
+_Data de referência do agente: 25/03/2026 14:00 · 12 casos × 3 rodadas · juiz: desligado_
 
 **Aprovados: 17/36 (47%)**
 
@@ -28,6 +28,7 @@ Entre as rodadas respondidas — casos sempre aprovados: 9/11 · instáveis (pas
 | ferramentas | 8 | 0 |
 | juiz | 4 | 0 |
 | nao_deve_conter | 0 | 0 |
+| prazos_rastreaveis | 0 | 0 |
 | sem_popularidade | 0 | 0 |
 | sem_vazamento_tecnico | 0 | 0 |
 | valores_rastreaveis | 0 | 0 |

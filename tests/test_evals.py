@@ -80,4 +80,10 @@ def test_comparacao_lado_a_lado(tmp_path, monkeypatch):
     monkeypatch.setattr(evals, "RESULTS_DIR", tmp_path)
     (tmp_path / "x.json").write_text(json.dumps([_result("a", 1, True), _result("a", 2, False)]))
     table = evals.compare(["x"])
-    assert "| x | m | 2 | 0 | 1/2 (50%) |" in table
+    assert "| x | m | 2 | 0 | 1/2 (50%) | 0 | 0 | 0 |" in table
+
+
+def test_prazo_sem_respaldo_reprova():
+    turnos = [_turn("Protocolo EM-20260325-0001, retorno ainda hoje!",
+                    [("encaminhar_para_humano", '{"protocolo": "EM-20260325-0001", "prazo_de_retorno": "até 24 horas úteis"}')])]
+    assert not check_case({"id": "x"}, turnos, "")["prazos_rastreaveis"]["ok"]

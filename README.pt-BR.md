@@ -16,8 +16,8 @@ equipe humana o que exige ação.
 - **Proteção de dados:** pedidos só são exibidos com o e-mail ou telefone do dono.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
-- **Avaliação automatizada** com 33 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
-- **54 testes** que rodam sem chamar o LLM, no CI a cada push.
+- **Avaliação automatizada** com 35 casos, checagens em código e juiz LLM — ver [Avaliação](#avaliação).
+- **71 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
 
@@ -154,7 +154,7 @@ A instrução interna nunca entra no histórico: fica só a resposta corrigida (
 
 ## Avaliação
 
-`uv run emporio-eval` roda [33 casos](evals/casos.json) — catálogo, pagamento, pedidos e LGPD, políticas, escopo e
+`uv run emporio-eval` roda [35 casos](evals/casos.json) — catálogo, pagamento, pedidos e LGPD, políticas, escopo e
 segurança, encaminhamento —, cada um numa conversa nova, e confere as respostas em duas camadas:
 
 | Camada | O que confere |
@@ -216,8 +216,38 @@ O que ela mostrou:
 - **O plano gratuito decide quais modelos dá para testar.** Os dois Gemini mais fortes estavam fora do ar (503 e
   timeout) e um terceiro esgotou a cota do dia, então a comparação cobre os modelos que de fato estavam disponíveis.
 
-Em aberto: uma resposta prometeu retorno "ainda hoje" quando a ferramenta diz "até 24 horas úteis", e algumas respostas
-de encaminhamento são secas (registram o caso sem explicar a garantia ou o atraso).
+### Respostas de encaminhamento: o verificável vai para o código, a qualidade vai para o prompt
+
+A comparação deixou dois problemas de encaminhamento em aberto, e cada um foi para uma camada:
+
+- **Prometer prazo que a loja não garante** ("vão te ligar ainda hoje" quando a ferramenta diz "até 24 horas úteis").
+  É verificável, então foi para o código: depois de um encaminhamento, qualquer prazo diferente do oficial devolve a
+  resposta para reescrita; promessa de contato com prazo *sem* encaminhamento conta como ação sem execução, e o modelo
+  precisa abrir o caso de verdade.
+- **Respostas secas** (só o protocolo, sem explicação). É qualidade, então foi para o prompt — uma estrutura em três
+  partes: reconhecer, explicar a situação com os dados consultados, informar protocolo e prazo oficial — e é medida
+  pelo juiz.
+
+Duas perguntas novas pressionam por prazo ("resolve em uma hora ou cancelo", "quero um gerente ainda hoje"). Cinco
+perguntas de encaminhamento, 3 rodadas cada, mesmo modelo e mesmo juiz ([antes](evals/resultados/encaminhamento_antes.md),
+[intermediária](evals/resultados/encaminhamento_intermediario.md), [depois](evals/resultados/encaminhamento_depois.md)):
+
+| Rodada | Aprovadas / respondidas | Ações sem execução | Prazos sem respaldo | Reprovadas pelo juiz | Espera (mediana) | Tokens/caso |
+|---|---|---|---|---|---|---|
+| Antes | 4/13 (31%) | 2 | 2 | 8 | 8,8 s | 10.910 |
+| Depois | 6/6 (100%) | 0 | 0 | 0 | 16,8 s | 15.119 |
+
+- **A rodada intermediária achou protocolos inventados em formatos novos** ("#2026-0325-01", "o protocolo gerado para o
+  seu atendimento é o #20263852"), que a verificação só reconhecia no formato da loja ("EM-..."). A detecção passou a
+  cobrir qualquer código com números apresentado como protocolo — e uma primeira versão, mais ampla, deu alarme falso
+  ("vou registrar, me passa seu telefone?" é legítimo), então o sinal virou "promessa de contato com prazo sem caso
+  aberto".
+- **Na rodada final, o caso "gerente ainda hoje" precisou de correção nas 3 rodadas**, e nas 3 o modelo abriu o caso
+  de verdade e respondeu com o prazo oficial.
+- **A correção tem custo:** cada correção é uma chamada a mais, então espera e tokens subiram (8,8 s → 16,8 s,
+  ~11 mil → ~15 mil tokens por caso). Aqui, resposta correta teve prioridade sobre velocidade.
+- **Amostra pequena:** 9 das 15 rodadas do "depois" ficaram sem resposta por cota, e o caso de garantia não teve
+  nenhuma rodada respondida.
 
 ---
 

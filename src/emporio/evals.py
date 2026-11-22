@@ -31,9 +31,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import config, tools
-from .agent import Agent
+from .agent import FALLBACK_REPLY, Agent
 from .data import Store
-from .guardrails import popularity_claims, unbacked_actions
+from .guardrails import popularity_claims, unbacked_actions, unbacked_deadlines
 from .llm import LLMClient
 from .prompts import build_system_prompt
 
@@ -128,6 +128,14 @@ def check_case(case: dict, turns: list[dict], system_prompt: str) -> dict[str, d
         seen += [(c["nome"], c["resultado"]) for c in t["ferramentas"]]
         unbacked += unbacked_actions(t["resposta"], seen)
     checks["acoes_rastreaveis"] = {"ok": not unbacked, "detalhe": unbacked and f"sem execução: {unbacked}"}
+
+    # Depois de um encaminhamento, só vale o prazo oficial devolvido pela ferramenta.
+    promised, seen = [], []
+    for t in turns:
+        seen += [(c["nome"], c["resultado"]) for c in t["ferramentas"]]
+        if t["resposta"] != FALLBACK_REPLY:  # a mensagem de erro padrão diz "tente de novo em instantes"
+            promised += unbacked_deadlines(t["resposta"], seen)
+    checks["prazos_rastreaveis"] = {"ok": not promised, "detalhe": promised and f"prometeu {promised}"}
 
     claims = popularity_claims(answers)
     checks["sem_popularidade"] = {"ok": not claims, "detalhe": claims and f"afirmou {claims}"}
@@ -316,8 +324,8 @@ def compare(labels: list[str]) -> str:
     lines = ["# Comparação de modelos", "",
              "Falta de cota não é erro do modelo: as taxas são calculadas só sobre as execuções que tiveram resposta.", "",
              "| Rótulo | Modelo(s) | Execuções | Sem resposta (cota) | Aprovadas / respondidas | Valores sem origem "
-             "| Ações sem execução | Reprovado pelo juiz | Casos instáveis | Tempo (mediana) | Tokens/caso |",
-             "|---|---|---|---|---|---|---|---|---|---|---|"]
+             "| Ações sem execução | Prazos sem respaldo | Reprovado pelo juiz | Casos instáveis | Tempo (mediana) | Tokens/caso |",
+             "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for label in labels:
         results = [r for r in json.loads((RESULTS_DIR / f"{label}.json").read_text(encoding="utf-8"))]
         total, missing = len(results), sum(r["sem_resposta"] for r in results)
@@ -334,7 +342,7 @@ def compare(labels: list[str]) -> str:
         lines.append(
             f"| {label} | {', '.join(m for m, _ in models.most_common(3))} | {total} | {missing} | "
             f"{sum(ok)}/{len(results)} ({sum(ok) / len(results):.0%}) | "
-            f"{fail('valores_rastreaveis')} | {fail('acoes_rastreaveis')} | {fail('juiz')} | {unstable} | "
+            f"{fail('valores_rastreaveis')} | {fail('acoes_rastreaveis')} | {fail('prazos_rastreaveis')} | {fail('juiz')} | {unstable} | "
             f"{statistics.median(secs):.1f} s | {_int(tokens)} |")
     return "\n".join(lines) + "\n"
 
@@ -363,7 +371,7 @@ def main() -> None:
     logging.basicConfig(level=logging.WARNING, format="[%(levelname)s] %(message)s")
 
     if args.comparar:
-        out = RESULTS_DIR / "comparacao.md"
+        out = RESULTS_DIR / f"{args.rotulo or 'comparacao'}.md"
         out.write_text(compare(args.comparar.split(",")), encoding="utf-8")
         print(out.read_text(encoding="utf-8"))
         return

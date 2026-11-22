@@ -1,6 +1,6 @@
 # Avaliação — cmp_gpt-oss-120b
 
-_Data de referência do agente: 25/03/2026 14:00 · 12 casos · juiz: qwen/qwen3.8-27b_
+_Data de referência do agente: 25/03/2026 14:00 · 12 casos · juiz: desligado_
 
 **Aprovados: 7/12 (58%)**
 
@@ -21,6 +21,7 @@ Sem resposta por cota/erro: 1 · aprovados entre os respondidos: 7/11 (64%)
 | ferramentas | 1 | 0 |
 | juiz | 4 | 0 |
 | nao_deve_conter | 1 | 0 |
+| prazos_rastreaveis | 0 | 0 |
 | sem_popularidade | 0 | 0 |
 | sem_vazamento_tecnico | 0 | 0 |
 | valores_rastreaveis | 0 | 0 |

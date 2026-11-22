@@ -19,8 +19,8 @@ the store's policies, and hands off to the human team whatever requires action.
 - **Data protection:** order details are only shown when the owner's e-mail or phone number is provided.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
-- **Automated evaluation** with 33 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
-- **54 tests** that run without calling the LLM, in CI on every push.
+- **Automated evaluation** with 35 cases, checks in code and an LLM judge — see [Evaluation](#evaluation).
+- **71 tests** that run without calling the LLM, in CI on every push.
 
 ---
 
@@ -158,7 +158,7 @@ The internal instruction never goes into the history: only the corrected answer 
 
 ## Evaluation
 
-`uv run emporio-eval` runs [33 cases](evals/casos.json) — catalog, payment, orders and privacy, policies,
+`uv run emporio-eval` runs [35 cases](evals/casos.json) — catalog, payment, orders and privacy, policies,
 scope and security, hand-off — each in a fresh conversation, and checks the answers in two layers:
 
 | Layer | What it checks |
@@ -219,8 +219,36 @@ What it showed:
 - **The free tier decides which models can be tested.** The two strongest Gemini models were down (503 and timeouts)
   and a third ran out of daily quota, so the comparison covers the models that were actually available.
 
-Still open: one answer promised a call back "today" when the tool says "within 24 business hours", and some hand-off
-answers are terse (they register the case without explaining the warranty or the delay).
+### Hand-off answers: what can be checked goes to code, what is quality goes to the prompt
+
+The comparison left two hand-off problems open, and each went to a different layer:
+
+- **Promising a deadline the store does not guarantee** ("we will call you today" when the tool says "within 24
+  business hours"). This is checkable, so it went to code: after a hand-off, any deadline other than the official one
+  sends the answer back for a rewrite; a contact promise with a deadline *without* a hand-off is treated as an
+  unbacked action, so the model has to open the case for real.
+- **Terse answers** (ticket number only, no explanation). This is quality, so it went to the prompt — a three-part
+  structure: acknowledge, explain the situation with the data consulted, give ticket and official deadline — and is
+  measured by the judge.
+
+Two new cases put pressure on deadlines ("solve it within an hour or I cancel", "I want a manager today"). Five
+hand-off cases, 3 runs each, same model and judge ([before](evals/resultados/encaminhamento_antes.md),
+[intermediate](evals/resultados/encaminhamento_intermediario.md), [after](evals/resultados/encaminhamento_depois.md)):
+
+| Run | Passed / answered | Unbacked actions | Deadlines without backing | Failed by judge | Median wait | Tokens/case |
+|---|---|---|---|---|---|---|
+| Before | 4/13 (31%) | 2 | 2 | 8 | 8.8 s | 10,910 |
+| After | 6/6 (100%) | 0 | 0 | 0 | 16.8 s | 15,119 |
+
+- **The intermediate run found invented ticket numbers in new formats** ("#2026-0325-01", "the ticket generated for
+  you is #20263852"), which the check only recognized in the store's "EM-..." format. Detection now covers any code
+  with digits presented as a ticket — and a first, broader version produced a false alarm ("I'll register it, may I
+  have your phone?" is legitimate), so the signal became "contact promised with a deadline and no case opened".
+- **In the after run, the "manager today" case needed a correction in all 3 runs**, and in all 3 the model opened the
+  case for real and answered with the official deadline.
+- **The fix has a cost:** corrections are extra calls, so wait time and tokens went up (8.8 s → 16.8 s,
+  ~11k → ~15k tokens per case). Correct answers took priority over speed here.
+- **Small sample:** 9 of the 15 "after" runs got no answer because of quota, and the warranty case had no answered run.
 
 ---
 

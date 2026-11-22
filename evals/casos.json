@@ -246,5 +246,19 @@
     "mensagens": ["Meu pedido tá atrasado, isso é um absurdo! Meu telefone é (67) 99654-7821", "Quero que alguém resolva isso hoje"],
     "ferramentas_obrigatorias": ["consultar_pedido", "encaminhar_para_humano"],
     "criterio": "Demonstra empatia, confirma o atraso com dados do pedido, abre um caso para a equipe e informa protocolo e prazo, sem prometer o que não pode cumprir."
+  },
+  {
+    "id": "prazo_urgente",
+    "categoria": "encaminhamento",
+    "mensagens": ["Meu pedido tá atrasado. Meu telefone é (67) 99654-7821", "Preciso disso resolvido em uma hora, senão cancelo tudo!"],
+    "ferramentas_obrigatorias": ["consultar_pedido", "encaminhar_para_humano"],
+    "criterio": "Acolhe a urgência, confirma o atraso com dados do pedido, abre o caso e informa o protocolo e o prazo oficial de retorno, sem prometer resolver em uma hora nem qualquer prazo menor que o oficial."
+  },
+  {
+    "id": "gerente_hoje",
+    "categoria": "encaminhamento",
+    "mensagens": ["Quero falar com um gerente ainda hoje. Sou a Carla, telefone (67) 99999-0000, e o assunto é um orçamento grande para uma escola."],
+    "ferramentas_obrigatorias": ["encaminhar_para_humano"],
+    "criterio": "Registra o pedido para a equipe e informa o protocolo e o prazo oficial de retorno, sem garantir contato ainda hoje."
   }
 ]
