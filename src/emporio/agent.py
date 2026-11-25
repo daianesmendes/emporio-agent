@@ -9,8 +9,8 @@ from pathlib import Path
 
 from . import config
 from .data import Store
-from .guardrails import (ACTION_INSTRUCTION, DEADLINE_INSTRUCTION, REWRITE_INSTRUCTION, popularity_claims,
-                         unbacked_actions, unbacked_deadlines)
+from .guardrails import (ACTION_INSTRUCTION, DEADLINE_INSTRUCTION, REWRITE_INSTRUCTION, SAFE_ACTION_REPLY,
+                         drop_sentences, popularity_claims, unbacked_actions, unbacked_deadlines)
 from .llm import AllModelsUnavailable, LLMClient
 from .prompts import build_system_prompt
 from .tools import run_tool, tool_schemas
@@ -133,7 +133,11 @@ class Agent:
                                       lambda t, msgs: unbacked_actions(t, self._tool_results(self.history + msgs)))
                 if fixed:
                     turn, text, model = fixed
-                    rewritten += problems
+                # Plano B: se ainda sobrou ação ou protocolo sem execução (a correção falhou, ou chamou a
+                # ferramenta mas manteve o protocolo falso), a resposta vira a mensagem segura.
+                if unbacked_actions(text, self._tool_results(self.history + turn)):
+                    text = self._replace_final(turn, SAFE_ACTION_REPLY)
+                rewritten += problems
 
             # Verificação final 2: prazo prometido diferente do oficial. Só reescreve o texto.
             deadlines = unbacked_deadlines(text, self._tool_results(self.history + turn))
@@ -143,7 +147,10 @@ class Agent:
                                       allow_tools=False)
                 if fixed:
                     turn, text, model = fixed
-                    rewritten += deadlines
+                else:
+                    # Plano B: tira só as frases com o prazo prometido; o protocolo e o resto continuam.
+                    text = self._replace_final(turn, drop_sentences(text, deadlines) or SAFE_ACTION_REPLY)
+                rewritten += deadlines
 
             # Verificação final 3: popularidade sem dado. Só reescreve o texto.
             claims = popularity_claims(text)
@@ -153,6 +160,12 @@ class Agent:
                 if fixed:
                     turn, text, model = fixed
                     rewritten += claims
+                else:
+                    # Plano B: tira só as frases com popularidade, se sobrar uma resposta.
+                    trimmed = drop_sentences(text, claims)
+                    if trimmed:
+                        text = self._replace_final(turn, trimmed)
+                        rewritten += claims
         except AllModelsUnavailable as e:
             log.error("Nenhum modelo disponível: %s", e)
             return AgentReply(FALLBACK_REPLY, None, calls)
@@ -160,6 +173,12 @@ class Agent:
         self.history.extend(turn)
         self._save()
         return AgentReply(text, model, calls, rewritten)
+
+    @staticmethod
+    def _replace_final(turn: list[dict], text: str) -> str:
+        """Troca o texto da resposta final do turno (o histórico guarda só a versão entregue)."""
+        turn[-1] = {"role": "assistant", "content": text}
+        return text
 
     def _correct(self, system, turn, calls, instruction, problems, still_bad, allow_tools=True):
         """Mostra ao modelo a resposta problemática com uma instrução interna e pede outra versão.
@@ -175,7 +194,9 @@ class Agent:
             return None
         fixed_turn = base + new
         # Se a correção executou uma ferramenta (ex.: abriu o caso de verdade), o histórico precisa registrá-la.
-        if not new_calls and len(still_bad(text, fixed_turn)) >= len(problems):
+        # Só vale a correção que resolveu tudo: "melhorou um pouco" ainda leva o problema ao cliente.
+        # Se chamou ferramenta, a versão fica (o histórico precisa da chamada) e o plano B confere o texto.
+        if not new_calls and still_bad(text, fixed_turn):
             log.warning("Correção não resolveu: %s", problems)
             return None
         calls += new_calls

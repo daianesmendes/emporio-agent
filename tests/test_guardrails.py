@@ -98,3 +98,10 @@ def test_horario_e_valores_nao_viram_protocolo():
 def test_vou_registrar_pedindo_contato_e_legitimo():
     from emporio.guardrails import unbacked_actions
     assert unbacked_actions("Vou registrar seu pedido para a equipe. Me passa um telefone para contato?", []) == []
+
+
+def test_drop_sentences_tira_so_as_frases_com_o_trecho():
+    from emporio.guardrails import drop_sentences
+    texto = "O C40 tem cordas de nylon. É o mais vendido da loja! Custa R$ 899,00."
+    assert drop_sentences(texto, ["mais vendido"]) == "O C40 tem cordas de nylon. Custa R$ 899,00."
+    assert drop_sentences("É o mais vendido!", ["mais vendido"]) == ""

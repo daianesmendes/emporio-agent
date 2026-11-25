@@ -141,7 +141,19 @@ def test_resposta_com_popularidade_e_reescrita_sem_ir_para_o_historico():
     assert a.history[-1]["content"] == reply.text
 
 
-def test_reescrita_que_falha_mantem_resposta_original():
+def test_reescrita_que_falha_tira_so_a_frase_de_popularidade():
+    llm = FakeLLM([
+        _msg("O Yamaha C40 é muito procurado! Ele tem cordas de nylon e custa R$ 899,00."),
+        _msg("O Yamaha C40 é o mais vendido!"),
+    ])
+    a = Agent(store=Store(), llm=llm)
+    reply = a.reply("Qual violão você indica?")
+    assert reply.text == "Ele tem cordas de nylon e custa R$ 899,00."
+    assert reply.rewritten == ["muito procurado"]
+    assert a.history[-1]["content"] == reply.text
+
+
+def test_reescrita_que_falha_sem_outra_frase_mantem_resposta_original():
     llm = FakeLLM([
         _msg("O Yamaha C40 é muito procurado!"),
         _msg("O Yamaha C40 é o mais vendido!"),
@@ -248,3 +260,28 @@ def test_400_comum_continua_tentando_o_proximo_modelo():
 
     client.client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
     assert client.chat([], []) == ("ok", "m2")
+
+
+def test_protocolo_inventado_com_correcao_que_falha_vira_resposta_segura(handoff_file):
+    # Plano B: a correção insiste no protocolo falso; o cliente recebe a mensagem segura, nunca o protocolo.
+    llm = FakeLLM([
+        _msg("Já registrei o seu caso. Protocolo: EM-8821-ATRASO"),
+        _msg("Pronto, protocolo EM-8821-ATRASO registrado!"),
+    ])
+    a = Agent(store=Store(), llm=llm)
+    reply = a.reply("Meu pedido está atrasado!")
+    assert reply.text == agent_mod.SAFE_ACTION_REPLY
+    assert "EM-8821-ATRASO" in reply.rewritten
+    assert all("8821" not in (m.get("content") or "") for m in a.history)
+    assert a.history[-1]["content"] == agent_mod.SAFE_ACTION_REPLY
+
+
+def test_prazo_com_correcao_que_falha_tira_so_a_frase_do_prazo(handoff_file):
+    llm = FakeLLM([
+        _msg(tool_calls=[("encaminhar_para_humano", {"motivo": "reclamacao", "resumo": "Atraso no pedido 8"})]),
+        _msg("Protocolo EM-20260325-0001. A equipe te liga ainda hoje!"),
+        _msg("Protocolo EM-20260325-0001. A equipe te liga ainda hoje, prometo!"),
+    ])
+    reply = Agent(store=Store(), llm=llm).reply("Quero que resolvam isso hoje")
+    assert reply.text == "Protocolo EM-20260325-0001."
+    assert reply.rewritten == ["ainda hoje"]

@@ -119,3 +119,20 @@ def unbacked_deadlines(text: str, tool_results: list[tuple[str, str]]) -> list[s
     if not handoff:
         return []
     return [m.group(0) for m in _DEADLINE_RE.finditer(text or "")]
+
+
+# Plano B da verificação final: quando a correção pelo modelo falha, a resposta com problema não
+# pode chegar ao cliente. Na dúvida, uma resposta menos completa, nunca uma promessa falsa.
+SAFE_ACTION_REPLY = (
+    "Não consegui confirmar o registro do seu caso por aqui agora. Para você não ficar sem retorno, "
+    "fale com a equipe pelo WhatsApp (67) 3341-4444, que eles resolvem para você."
+)
+
+_SENTENCE_RE = re.compile(r"[^.!?\n]+[.!?]*\s*")
+
+
+def drop_sentences(text: str, trechos: list[str]) -> str:
+    """Remove as frases que contêm algum dos trechos e mantém o resto da resposta."""
+    lowered = [t.lower() for t in trechos]
+    kept = [s for s in _SENTENCE_RE.findall(text or "") if not any(t in s.lower() for t in lowered)]
+    return "".join(kept).strip()

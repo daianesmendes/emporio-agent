@@ -23,7 +23,7 @@ equipe humana o que exige ação.
 - **Fallback entre modelos e provedores** (Gemini → Groq) para operar no plano gratuito sem interromper o atendimento.
 - **Avaliação automatizada** com 35 casos, checagens em código e juiz LLM, mais uma **comparação de modelos** com rodadas repetidas. Ver [Avaliação](#avaliação).
 - **Checagem automática de qualidade dos dados**, que encontrou 14 inconsistências na base.
-- **90 testes** que rodam sem chamar o LLM, no CI a cada push.
+- **94 testes** que rodam sem chamar o LLM, no CI a cada push.
 
 ---
 
@@ -201,6 +201,10 @@ prompt, então a regra virou código. Antes de a resposta chegar ao cliente:
   desmentem: o Yamaha C40, chamado de "muito procurado" numa conversa anterior, não tem nenhuma venda registrada.
 
 A instrução interna nunca entra no histórico: fica só a resposta corrigida (e a ferramenta que ela chamou, se houver).
+
+Se a correção não resolver tudo, entra um **plano B** em código: ação ou protocolo sem execução viram uma mensagem
+segura com o telefone da loja, e prazo ou popularidade sem dado têm só a frase removida. Na dúvida, o cliente recebe
+uma resposta menos completa, nunca uma promessa falsa.
 
 ---
 

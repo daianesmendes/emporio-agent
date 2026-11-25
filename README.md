@@ -26,7 +26,7 @@ the store's policies, and hands off to the human team whatever requires action.
 - **Fallback across models and providers** (Gemini → Groq) to run on free tiers without interrupting the conversation.
 - **Automated evaluation** with 35 cases, checks in code and an LLM judge, plus a **model comparison** with repeated runs. See [Evaluation](#evaluation).
 - **Automated data quality checks**, which found 14 inconsistencies in the dataset.
-- **90 tests** that run without calling the LLM, in CI on every push.
+- **94 tests** that run without calling the LLM, in CI on every push.
 
 ---
 
@@ -204,6 +204,10 @@ rule against them, so the rule moved to code. Before the answer reaches the cust
   contradicts them: the Yamaha C40, called "very sought after" in an earlier transcript, has no recorded sales.
 
 The internal instruction never goes into the history: only the corrected answer (and any tool it called) is kept.
+
+If the correction does not fix everything, a **plan B** in code takes over: an unbacked action or ticket number becomes
+a safe message with the store's phone number, and an unbacked deadline or popularity claim has just that sentence
+removed. When in doubt, the customer gets a less complete answer, never a false promise.
 
 ---
 
